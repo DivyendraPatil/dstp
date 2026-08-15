@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   go-lint:
     name: Lint
@@ -13,13 +16,35 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          persist-credentials: false
+          persist-credentials: true
 
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.x"
 
-      # Built with the runner's Go (must be >= go.mod). Avoids release-binary
-      # toolchain mismatches that make golangci-lint-action exit 3.
       - name: Run golangci-lint
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --timeout=5m ./...
+        id: lint
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --timeout=5m ./... 2>&1 | tee lint-output.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish lint log on failure
+        if: steps.lint.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin
+          git checkout --orphan ci-lint-log
+          git rm -rf . >/dev/null 2>&1 || true
+          mv lint-output.txt /tmp/lint-output.txt
+          git clean -fdx
+          cp /tmp/lint-output.txt lint-output.txt
+          git add lint-output.txt
+          git commit -m "ci: lint output from ${GITHUB_SHA}"
+          git push -f origin ci-lint-log
+
+      - name: Fail if lint failed
+        if: steps.lint.outcome == 'failure'
+        run: exit 1
