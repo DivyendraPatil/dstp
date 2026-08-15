@@ -26,20 +26,20 @@ Options:
 	-p           <int>     Number of ping packets                              [Default: 3]
 	-t           <int>     Give up on ping after this many seconds             [Default: 2s per ping packet]
 	--port       <string>  Port for testing TLS and HTTPS connectivity         [Default: 443]
-	--dns        <string>  Custom DNS server to use for DNS resolution         [No default]
+	--dns        <string>  Custom DNS server for the configured DNS check     [Default: system resolver]
 	-h, --help             Show this message and exit.
 `
 
 // UsageAndExit prints usage and exists the program.
 func UsageAndExit(err error) {
 	color.Red(err.Error())
-	fmt.Printf(usageStr)
+	fmt.Print(usageStr)
 	os.Exit(1)
 }
 
 // HelpAndExit , prints helps and exists the program.
 func HelpAndExit() {
-	fmt.Printf(usageStr)
+	fmt.Print(usageStr)
 	os.Exit(0)
 }
 
@@ -47,17 +47,14 @@ func HelpAndExit() {
 func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	opts := &Config{}
 
-	// Define flags
-	fs.StringVar(&opts.Addr, "a", "", "The URL or the IP address to run tests against")
-	fs.StringVar(&opts.Addr, "addr", "", "The URL or the IP address to run tests against")
-	fs.StringVar(&opts.Output, "o", "plaintext", "The type of the output")
-	fs.StringVar(&opts.Output, "out", "plaintext", "The type of the output")
+	// Define flags (*P variants enable documented short options like -a, -t)
+	fs.StringVarP(&opts.Addr, "addr", "a", "", "The URL or the IP address to run tests against")
+	fs.StringVarP(&opts.Output, "out", "o", "plaintext", "The type of the output")
 	fs.StringVar(&opts.Port, "port", "", "Port for testing TLS and HTTPS connectivity")
-	fs.IntVar(&opts.PingCount, "p", 3, "Number of ping packets")
-	fs.IntVar(&opts.Timeout, "t", -1, "Give up on ping after this many seconds")
-	fs.StringVar(&opts.CustomDnsServer, "dns", "", "Custom DNS server to use for DNS resolution")
-	fs.BoolVar(&opts.ShowHelp, "h", false, "Show help message")
-	fs.BoolVar(&opts.ShowHelp, "help", false, "Show help message")
+	fs.IntVarP(&opts.PingCount, "p", "p", 3, "Number of ping packets")
+	fs.IntVarP(&opts.Timeout, "t", "t", -1, "Give up on ping after this many seconds")
+	fs.StringVar(&opts.CustomDnsServer, "dns", "", "Custom DNS server for the configured DNS check")
+	fs.BoolVarP(&opts.ShowHelp, "help", "h", false, "Show help message")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err

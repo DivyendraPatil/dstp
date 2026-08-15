@@ -1,4 +1,4 @@
-//go:build integration || darwin || fallback
+//go:build integration || fallback
 
 package ping
 

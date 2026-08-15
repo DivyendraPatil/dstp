@@ -3,14 +3,17 @@
 package ping
 
 import (
-	"github.com/go-ping/ping"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
-func createPinger(addr string) (*ping.Pinger, error) {
-	p, err := ping.NewPinger(addr)
+func createPinger(addr string) (*probing.Pinger, error) {
+	p, err := probing.NewPinger(addr)
+	if err != nil {
+		return nil, err
+	}
 
-	// https://pkg.go.dev/github.com/go-ping/ping#readme-windows
+	// https://pkg.go.dev/github.com/prometheus-community/pro-bing#readme-windows
 	p.SetPrivileged(true)
 
-	return p, err
+	return p, nil
 }

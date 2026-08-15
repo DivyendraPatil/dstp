@@ -3,11 +3,9 @@
 package ping
 
 import (
-	"github.com/go-ping/ping"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
-func createPinger(addr string) (*ping.Pinger, error) {
-	p, err := ping.NewPinger(addr)
-
-	return p, err
+func createPinger(addr string) (*probing.Pinger, error) {
+	return probing.NewPinger(addr)
 }

@@ -20,7 +20,7 @@ Options:
         -p           <int>     Number of ping packets                              [Default: 3]
         -t           <int>     Give up on ping after this many seconds             [Default: 2s per ping packet]
         --port       <string>  Port for testing TLS and HTTPS connectivity         [Default: 443]
-        --dns        <string>  Custom DNS server to use for DNS resolution         [No default]
+        --dns        <string>  Custom DNS server for the configured DNS check      [Default: system resolver]
         -h, --help             Show this message and exit.
 ```
 
@@ -96,8 +96,7 @@ for 64-bit Windows, macOS, and Linux targets. They contain the compiled executab
 
 ### Installation from source
 
-0. Verify that you have Go 1.17+ installed (The source code uses _( `//go:build` )_ conditional compilation directives
-   that is introduced in Go 1.17.)
+0. Verify that you have Go 1.25+ installed
 
    ```
    $ go version
@@ -140,6 +139,7 @@ for 64-bit Windows, macOS, and Linux targets. They contain the compiled executab
          -p           <int>     Number of ping packets                              [Default: 3]
          -t           <int>     Give up on ping after this many seconds             [Default: 2s per ping packet]
          --port       <string>  Port for testing TLS and HTTPS connectivity         [Default: 443]
+         --dns        <string>  Custom DNS server for the configured DNS check      [Default: system resolver]
          -h, --help             Show this message and exit.
    ```
 

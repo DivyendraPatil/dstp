@@ -1,0 +1,25 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - gocyclo
+    - dupl
+    - unconvert
+    - goconst
+
+linters-settings:
+  gocyclo:
+    min-complexity: 20
+  dupl:
+    threshold: 120
+
+issues:
+  exclude-use-default: false

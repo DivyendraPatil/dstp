@@ -1,4 +1,4 @@
-//go:build integration || darwin
+//go:build integration
 
 package lookup
 
@@ -20,8 +20,8 @@ func TestLookup(t *testing.T) {
 	}
 	wg.Wait()
 
-	if result.DNS.Error != nil {
-		t.Fatal(result.DNS.Error)
+	if result.SystemDNS.Error != nil {
+		t.Fatal(result.SystemDNS.Error)
 	}
 
 	if result.SystemDNS.Content == "" {

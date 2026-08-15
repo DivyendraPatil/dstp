@@ -30,12 +30,16 @@ func Host(ctx context.Context, wg *sync.WaitGroup, addr common.Address, customDn
 	addrs, err := r.LookupHost(ctx, addr.String())
 	if err != nil {
 		part.Error = err
+		result.Mu.Lock()
 		result.SystemDNS = part
+		result.Mu.Unlock()
 		return err
 	}
 
 	part.Content = "resolving " + strings.Join(addrs, ", ")
+	result.Mu.Lock()
 	result.SystemDNS = part
+	result.Mu.Unlock()
 
 	return nil
 }

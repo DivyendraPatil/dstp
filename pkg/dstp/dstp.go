@@ -34,7 +34,8 @@ func RunAllTests(ctx context.Context, config config.Config) error {
 
 	go ping.RunTest(ctx, &wg, common.Address(addr), config.PingCount, config.Timeout, &result)
 
-	go ping.RunDNSTest(ctx, &wg, common.Address(addr), config.PingCount, config.Timeout, &result)
+	// DNS: default system resolver. SystemDNS: configured resolver (system or --dns).
+	go lookup.Default(ctx, &wg, common.Address(addr), config.Timeout, &result)
 
 	go lookup.Host(ctx, &wg, common.Address(addr), config.CustomDnsServer, &result)
 
@@ -60,7 +61,8 @@ func testTLS(ctx context.Context, wg *sync.WaitGroup, address common.Address, t 
 		p = port
 	}
 
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Duration(t) * time.Second}, "tcp", fmt.Sprintf("%s:%s", string(address), p), nil)
+	dialer := &net.Dialer{Timeout: time.Duration(t) * time.Second}
+	rawConn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(string(address), p))
 	if err != nil {
 		result.Mu.Lock()
 		result.TLS = common.ResultPart{
@@ -69,6 +71,20 @@ func testTLS(ctx context.Context, wg *sync.WaitGroup, address common.Address, t 
 		result.Mu.Unlock()
 		return err
 	}
+
+	conn := tls.Client(rawConn, &tls.Config{
+		ServerName: string(address),
+	})
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = rawConn.Close()
+		result.Mu.Lock()
+		result.TLS = common.ResultPart{
+			Error: err,
+		}
+		result.Mu.Unlock()
+		return err
+	}
+	defer conn.Close()
 
 	err = conn.VerifyHostname(string(address))
 	if err != nil {
@@ -106,7 +122,7 @@ func testHTTPS(ctx context.Context, wg *sync.WaitGroup, address common.Address, 
 		url += fmt.Sprintf(":%s", port)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		result.Mu.Lock()
 		result.HTTPS = common.ResultPart{
@@ -129,6 +145,7 @@ func testHTTPS(ctx context.Context, wg *sync.WaitGroup, address common.Address, 
 		result.Mu.Unlock()
 		return err
 	}
+	defer resp.Body.Close()
 
 	result.Mu.Lock()
 	result.HTTPS = common.ResultPart{
