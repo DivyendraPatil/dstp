@@ -12,7 +12,7 @@ import (
 	"github.com/DivyendraPatil/dstp/config"
 )
 
-func TestRunAllTestsSkipAll(t *testing.T) {
+func TestIntegrationSkipAll(t *testing.T) {
 	err := RunAllTests(context.Background(), config.Config{
 		Addr:      "example.com",
 		Output:    "json",
