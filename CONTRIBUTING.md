@@ -12,7 +12,7 @@ make build
 ./dstp example.com -q
 ```
 
-Requires Go 1.26+.
+Requires Go **1.26.0+** (toolchain `go1.26.6`). Prefer `make check` before opening a PR.
 
 ## Pull requests
 
