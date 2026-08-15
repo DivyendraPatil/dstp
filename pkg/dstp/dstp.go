@@ -6,10 +6,10 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/ycd/dstp/config"
-	"github.com/ycd/dstp/pkg/common"
-	"github.com/ycd/dstp/pkg/lookup"
-	"github.com/ycd/dstp/pkg/ping"
+	"github.com/DivyendraPatil/dstp/config"
+	"github.com/DivyendraPatil/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/lookup"
+	"github.com/DivyendraPatil/dstp/pkg/ping"
 )
 
 // ErrChecksFailed is returned when one or more connectivity checks failed.

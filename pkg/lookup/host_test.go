@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 func TestLookup(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ycd/dstp/config"
+	"github.com/DivyendraPatil/dstp/config"
 )
 
 func TestRunAllTests(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/ycd/dstp/config"
-	"github.com/ycd/dstp/pkg/dstp"
+	"github.com/DivyendraPatil/dstp/config"
+	"github.com/DivyendraPatil/dstp/pkg/dstp"
 )
 
 func main() {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 func RunTest(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 // Default resolves addr with the system default resolver, optionally via DoH.

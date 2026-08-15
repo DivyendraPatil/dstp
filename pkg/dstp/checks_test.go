@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ycd/dstp/config"
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/config"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 func TestRunAllTestsSkipAll(t *testing.T) {

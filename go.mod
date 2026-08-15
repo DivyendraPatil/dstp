@@ -1,4 +1,4 @@
-module github.com/ycd/dstp
+module github.com/DivyendraPatil/dstp
 
 go 1.26.6
 

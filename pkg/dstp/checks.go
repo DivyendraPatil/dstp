@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 func testTCP(ctx context.Context, address common.Address, port string, timeout time.Duration, result *common.Result) error {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ycd/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 // progressWriter prints lightweight start/done lines to stderr.

@@ -20,17 +20,24 @@ HTTPS: GET 200 OK; TTFB=90ms; proto=TLS1.3
 
 Exit code is `1` if any check fails.
 
-## Install
+## Install (this repo)
 
 ```bash
-brew install dstp
-# or
-go install github.com/ycd/dstp/cmd/dstp@latest
+go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
 ```
 
-Requires **Go 1.26+** to build from source.
+Or from a clone:
 
-> This fork: [DivyendraPatil/dstp](https://github.com/DivyendraPatil/dstp). Module path stays `github.com/ycd/dstp` for `go install` compatibility.
+```bash
+git clone https://github.com/DivyendraPatil/dstp
+cd dstp
+make
+./dstp example.com -q
+```
+
+Requires **Go 1.26+**.
+
+> `brew install dstp` and nix/AUR packages still track the original [ycd/dstp](https://github.com/ycd/dstp). Use `go install` above for **this** version.
 
 ## Common options
 
@@ -64,21 +71,6 @@ dstp example.com --skip ping -q
 | **TCP** | Plain TCP connect (`--tcp-port`, default 443) |
 | **TLS** | Cert expiry, issuer, protocol, cipher, SANs |
 | **HTTPS** | Status, TTFB, redirects |
-
-## Build from source
-
-```bash
-git clone https://github.com/DivyendraPatil/dstp
-cd dstp
-make
-./dstp example.com -q
-```
-
-## Also available via
-
-- [Nix](https://search.nixos.org/packages?query=dstp): `nix shell nixpkgs#dstp`
-- [AUR](https://aur.archlinux.org/packages/dstp)
-- [GitHub Releases](https://github.com/ycd/dstp/releases) (upstream binaries)
 
 ## Note for oh-my-zsh + Docker
 
