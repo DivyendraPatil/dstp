@@ -19,9 +19,7 @@ jobs:
         with:
           go-version: "1.26.x"
 
+      # Built with the runner's Go (must be >= go.mod). Avoids release-binary
+      # toolchain mismatches that make golangci-lint-action exit 3.
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          # Binary must be built with Go >= module go directive (1.26.6).
-          version: v2.12.2
-          args: --timeout=5m
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --timeout=5m ./...
