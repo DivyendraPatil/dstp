@@ -15,27 +15,48 @@ var (
 
 // String returns a human-readable version line.
 func String() string {
-	v, c, d := Version, Commit, Date
-	if v == "dev" || v == "" {
-		if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-			v = bi.Main.Version
-		}
+	v, c, d := resolve()
+	return "dstp " + v + " (commit " + c + ", built " + d + ")"
+}
+
+func resolve() (v, c, d string) {
+	v, c, d = Version, Commit, Date
+	needModule := v == "dev" || v == ""
+	needVCS := c == "none" || c == "" || d == "unknown" || d == ""
+	if !needModule && !needVCS {
+		return strings.TrimSpace(v), c, d
 	}
-	if c == "none" || c == "" {
-		if bi, ok := debug.ReadBuildInfo(); ok {
-			for _, s := range bi.Settings {
-				if s.Key == "vcs.revision" && s.Value != "" {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return strings.TrimSpace(v), c, d
+	}
+	if needModule && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		v = bi.Main.Version
+	}
+	if needVCS {
+		dirty := false
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if (c == "none" || c == "") && s.Value != "" {
 					c = s.Value
 					if len(c) > 7 {
 						c = c[:7]
 					}
 				}
-				if s.Key == "vcs.time" && s.Value != "" {
+			case "vcs.time":
+				if (d == "unknown" || d == "") && s.Value != "" {
 					d = s.Value
+				}
+			case "vcs.modified":
+				if s.Value == "true" {
+					dirty = true
 				}
 			}
 		}
+		if dirty && c != "" && c != "none" && !strings.HasSuffix(c, "-dirty") {
+			c += "-dirty"
+		}
 	}
-	v = strings.TrimSpace(v)
-	return "dstp " + v + " (commit " + c + ", built " + d + ")"
+	return strings.TrimSpace(v), c, d
 }

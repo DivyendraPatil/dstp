@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,6 +57,70 @@ func TestConfigureOptionsLoadsYAML(t *testing.T) {
 	}
 	if !opts.Quiet || opts.Timeout != 9 || !opts.ShouldSkip("ping") {
 		t.Fatalf("%+v", opts)
+	}
+}
+
+func TestPositionalOverridesYAMLAddr(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("addr: production\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	opts, err := ConfigureOptions(fs, []string{"--config", path, "staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Addr != "staging" {
+		t.Fatalf("addr=%q", opts.Addr)
+	}
+}
+
+func TestSkipEmptyClearsYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("skip: [ping,tls]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	opts, err := ConfigureOptions(fs, []string{"--config", path, "--skip=", "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts.Skip) != 0 {
+		t.Fatalf("skip=%v", opts.Skip)
+	}
+}
+
+func TestMissingTargetIsUsage(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := ConfigureOptions(fs, nil)
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestRejectZeroTimeout(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := ConfigureOptions(fs, []string{"example.com", "-t", "0"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestHelpBeforeConfig(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := ConfigureOptions(fs, []string{"--help", "--config", "/no/such/file.yaml"})
+	if !errors.Is(err, ErrHelp) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestExplicitMissingConfigFails(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := ConfigureOptions(fs, []string{"--config", filepath.Join(t.TempDir(), "missing.yaml"), "example.com"})
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
 

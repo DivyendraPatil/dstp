@@ -1,8 +1,8 @@
 version: 2
 
 env:
-  - GO111MODULE=on
-  - GOPROXY=https://proxy.golang.org,direct
+  - GOPROXY=https://proxy.golang.org
+  - GOSUMDB=sum.golang.org
 
 before:
   hooks:
@@ -16,22 +16,29 @@ builds:
       - linux
       - windows
     goarch:
-      - 386
       - amd64
       - arm64
+      - "386"
+    ignore:
+      - goos: darwin
+        goarch: "386"
     dir: .
     main: ./cmd/dstp
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
       - -X github.com/DivyendraPatil/dstp/internal/version.Version={{.Version}}
       - -X github.com/DivyendraPatil/dstp/internal/version.Commit={{.ShortCommit}}
-      - -X github.com/DivyendraPatil/dstp/internal/version.Date={{.Date}}
+      - -X github.com/DivyendraPatil/dstp/internal/version.Date={{.CommitDate}}
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{- title .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - LICENSE
       - README.md

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/mattn/go-isatty"
 )
@@ -14,11 +16,20 @@ type Address string
 
 func (a Address) String() string { return string(a) }
 
+// Status values for a check outcome.
+const (
+	StatusOK           = "ok"
+	StatusWarning      = "warning"
+	StatusInconclusive = "inconclusive"
+	StatusError        = "error"
+	StatusSkipped      = "skipped"
+)
+
 // ResultPart is one check outcome.
 type ResultPart struct {
 	Content string `json:"content,omitempty"`
 	Error   error  `json:"-"`
-	Status  string `json:"status"` // ok | error | skipped
+	Status  string `json:"status"` // ok | warning | inconclusive | error | skipped
 }
 
 func (o ResultPart) String() string {
@@ -35,15 +46,31 @@ func (o ResultPart) message() string {
 	return o.Content
 }
 
-func OK(content string) ResultPart { return ResultPart{Content: content, Status: "ok"} }
-func Fail(err error) ResultPart    { return ResultPart{Error: err, Status: "error"} }
-func Skipped() ResultPart          { return ResultPart{Content: "skipped", Status: "skipped"} }
+func OK(content string) ResultPart {
+	return ResultPart{Content: content, Status: StatusOK}
+}
+
+func Warn(content string) ResultPart {
+	return ResultPart{Content: content, Status: StatusWarning}
+}
+
+func Inconclusive(content string) ResultPart {
+	return ResultPart{Content: content, Status: StatusInconclusive}
+}
+
+func Fail(err error) ResultPart {
+	return ResultPart{Error: err, Status: StatusError}
+}
+
+func Skipped() ResultPart {
+	return ResultPart{Content: "skipped", Status: StatusSkipped}
+}
 
 // Result aggregates all connectivity checks. Field order here drives plaintext output order.
 type Result struct {
 	Ping       ResultPart `json:"ping"`
 	DNS        ResultPart `json:"dns"`
-	SystemDNS  ResultPart `json:"system_dns"`
+	SystemDNS  ResultPart `json:"configured_dns"`
 	Records    ResultPart `json:"records"`
 	TCP        ResultPart `json:"tcp"`
 	UDP        ResultPart `json:"udp"`
@@ -64,7 +91,7 @@ func (r *Result) Store(dst *ResultPart, part ResultPart) {
 
 func (r *Result) Failed() bool {
 	for _, p := range r.parts() {
-		if p.part.Status == "error" || p.part.Error != nil {
+		if p.part.Status == StatusError || p.part.Error != nil {
 			return true
 		}
 	}
@@ -81,7 +108,7 @@ func (r *Result) parts() []namedPart {
 	return []namedPart{
 		{"Ping", "ping", r.Ping},
 		{"DNS", "dns", r.DNS},
-		{"ConfiguredDNS", "system_dns", r.SystemDNS},
+		{"ConfiguredDNS", "configured_dns", r.SystemDNS},
 		{"Records", "records", r.Records},
 		{"TCP", "tcp", r.TCP},
 		{"UDP", "udp", r.UDP},
@@ -107,13 +134,18 @@ func (r *Result) plaintextOutput() string {
 		if p.part.Status == "" && p.part.Content == "" && p.part.Error == nil {
 			continue
 		}
+		msg := sanitizeForTerminal(p.part.message())
 		switch {
-		case p.part.Error != nil || p.part.Status == "error":
-			output += fmt.Sprintf("%s: %s\n", White(p.name), Red(p.part.message()))
-		case p.part.Status == "skipped":
-			output += fmt.Sprintf("%s: %s\n", White(p.name), p.part.Content)
+		case p.part.Error != nil || p.part.Status == StatusError:
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Red(msg))
+		case p.part.Status == StatusWarning:
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Yellow(msg))
+		case p.part.Status == StatusInconclusive:
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Cyan(msg))
+		case p.part.Status == StatusSkipped:
+			output += fmt.Sprintf("%s: %s\n", White(p.name), msg)
 		default:
-			output += fmt.Sprintf("%s: %s\n", White(p.name), Green(p.part.Content))
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Green(msg))
 		}
 	}
 	return output
@@ -133,9 +165,9 @@ func (r *Result) jsonOutput() string {
 		it := item{Status: p.part.Status}
 		if it.Status == "" {
 			if p.part.Error != nil {
-				it.Status = "error"
+				it.Status = StatusError
 			} else {
-				it.Status = "ok"
+				it.Status = StatusOK
 			}
 		}
 		if p.part.Error != nil {
@@ -147,6 +179,23 @@ func (r *Result) jsonOutput() string {
 	}
 	byt, _ := json.MarshalIndent(out, "", "  ")
 	return string(byt)
+}
+
+// sanitizeForTerminal strips/escapes control characters for plaintext display.
+func sanitizeForTerminal(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\t' || r == '\n':
+			b.WriteRune(' ')
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, "\\u%04x", r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func InitColor() {

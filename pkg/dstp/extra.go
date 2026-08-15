@@ -3,42 +3,70 @@ package dstp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
+const maxCmdOutput = 256 << 10
+
 func testTraceroute(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	args := tracerouteArgs(address.String())
-	out, err := runCmd(ctx, timeout, args...)
-	if err != nil && out == "" {
+	out, err := runCmd(ctx, args...)
+	if err != nil {
+		if out == "" {
+			result.Store(&result.Traceroute, common.Fail(err))
+			return err
+		}
+		// Preserve exit error with truncated output
+		result.Store(&result.Traceroute, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
+		return err
+	}
+	hops := hopLines(out)
+	if len(hops) == 0 {
+		err := fmt.Errorf("empty traceroute hops")
 		result.Store(&result.Traceroute, common.Fail(err))
 		return err
 	}
-	lines := nonEmptyLines(out)
-	if len(lines) == 0 {
-		err := fmt.Errorf("empty traceroute output")
-		result.Store(&result.Traceroute, common.Fail(err))
-		return err
-	}
-	// Keep output compact: first hop + last hop + count.
-	summary := lines[0]
-	if len(lines) > 1 {
-		summary = fmt.Sprintf("%s … %s (%d hops)", lines[0], lines[len(lines)-1], len(lines))
+	summary := hops[0]
+	if len(hops) > 1 {
+		summary = fmt.Sprintf("%s … %s (%d hops)", hops[0], hops[len(hops)-1], len(hops))
 	}
 	result.Store(&result.Traceroute, common.OK(summary))
 	return nil
 }
 
 func testWhois(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
-	out, err := runCmd(ctx, timeout, "whois", address.String())
-	if err != nil && out == "" {
-		result.Store(&result.Whois, common.Fail(err))
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	if _, err := exec.LookPath("whois"); err != nil {
+		msg := "whois not installed; install whois or use an RDAP client"
+		if runtime.GOOS == "windows" {
+			msg = "whois not available on this Windows host"
+		}
+		result.Store(&result.Whois, common.Fail(fmt.Errorf("%s", msg)))
+		return fmt.Errorf("%s", msg)
+	}
+
+	out, err := runCmd(ctx, "whois", address.String())
+	if err != nil {
+		if out == "" {
+			result.Store(&result.Whois, common.Fail(err))
+			return err
+		}
+		result.Store(&result.Whois, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
 		return err
 	}
 	org := extractWhoisField(out, []string{"OrgName", "org-name", "Organization", "Registrant Organization", "descr"})
@@ -51,7 +79,6 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 		parts = append(parts, "range="+netRange)
 	}
 	if len(parts) == 0 {
-		// Fallback: first non-comment line
 		for _, line := range nonEmptyLines(out) {
 			if !strings.HasPrefix(line, "%") && !strings.HasPrefix(line, "#") {
 				parts = append(parts, truncate(line, 120))
@@ -69,13 +96,24 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 }
 
 func testMTU(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
-	// Probe with don't-fragment ping at common sizes; report largest that succeeds.
-	sizes := []int{1472, 1400, 1200, 1000, 576}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	overhead := 28 // IPv4 + ICMP
+	if ip := net.ParseIP(address.String()); ip != nil && ip.To4() == nil {
+		overhead = 48 // IPv6 + ICMPv6
+	}
+
+	// Binary-ish search over common payload sizes within one shared deadline.
+	sizes := []int{1472, 1400, 1280, 1200, 1000, 576, 512}
 	var best int
 	for _, sz := range sizes {
+		if ctx.Err() != nil {
+			break
+		}
 		args := mtuPingArgs(address.String(), sz)
-		if _, err := runCmd(ctx, timeout, args...); err == nil {
-			best = sz + 28 // IP+ICMP headers approx for reported MTU
+		if _, err := runCmd(ctx, args...); err == nil {
+			best = sz + overhead
 			break
 		}
 	}
@@ -84,7 +122,7 @@ func testMTU(ctx context.Context, address common.Address, timeout time.Duration,
 		result.Store(&result.MTU, common.Fail(err))
 		return err
 	}
-	result.Store(&result.MTU, common.OK(fmt.Sprintf("path MTU >= %d (payload probe)", best)))
+	result.Store(&result.MTU, common.OK(fmt.Sprintf("path MTU >= %d (payload probe, overhead=%d)", best, overhead)))
 	return nil
 }
 
@@ -110,13 +148,11 @@ func mtuPingArgs(host string, payload int) []string {
 	}
 }
 
-func runCmd(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
+func runCmd(ctx context.Context, args ...string) (string, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("empty command")
 	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, args[0], args[1:]...)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -125,10 +161,51 @@ func runCmd(ctx context.Context, timeout time.Duration, args ...string) (string,
 	if out == "" {
 		out = stderr.String()
 	}
-	if err != nil && out == "" {
-		return "", fmt.Errorf("%v: %w", args[0], err)
+	if len(out) > maxCmdOutput {
+		out = out[:maxCmdOutput]
 	}
-	return out, err
+	if err != nil {
+		if out == "" {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", fmt.Errorf("%v: timed out", args[0])
+			}
+			return "", fmt.Errorf("%v: %w", args[0], err)
+		}
+		return out, fmt.Errorf("%v: %w", args[0], err)
+	}
+	return out, nil
+}
+
+func hopLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Numbered hop lines: " 1  …" or "1  …"
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		n := strings.TrimSuffix(fields[0], ".")
+		if isAllDigits(n) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func nonEmptyLines(s string) []string {

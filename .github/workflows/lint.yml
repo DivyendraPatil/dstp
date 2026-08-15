@@ -6,10 +6,18 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   go-lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -17,7 +25,24 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.6"
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: go mod tidy
+        run: go mod tidy -diff
+
+      - name: go mod verify
+        run: go mod verify
 
       - name: Run golangci-lint
         run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --timeout=5m ./...
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: GoReleaser check + snapshot
+        run: |
+          go run github.com/goreleaser/goreleaser/v2@latest check
+          go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish

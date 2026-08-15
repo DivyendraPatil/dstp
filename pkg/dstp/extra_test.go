@@ -18,12 +18,16 @@ func TestTruncateAndWhoisExtract(t *testing.T) {
 	}
 }
 
-func TestBuildURL(t *testing.T) {
-	if got := buildURL("http", "example.com", "80"); got != "http://example.com" {
-		t.Fatal(got)
-	}
-	if got := buildURL("http", "example.com", "8080"); got != "http://example.com:8080" {
-		t.Fatal(got)
+func TestHopLines(t *testing.T) {
+	out := `traceroute to example.com
+ 1  gateway 1 ms
+ 2  * * *
+foo
+ 3  end 2 ms
+`
+	hops := hopLines(out)
+	if len(hops) != 3 {
+		t.Fatalf("%v", hops)
 	}
 }
 

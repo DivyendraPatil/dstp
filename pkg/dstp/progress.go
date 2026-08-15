@@ -38,10 +38,23 @@ func (p *progressWriter) done(name string, part common.ResultPart) {
 	status := part.Status
 	if status == "" {
 		if part.Error != nil {
-			status = "error"
+			status = common.StatusError
 		} else {
-			status = "ok"
+			status = common.StatusOK
 		}
 	}
-	_, _ = fmt.Fprintf(p.w, "✓ %s (%s)\n", name, status)
+	glyph := "•"
+	switch status {
+	case common.StatusOK:
+		glyph = "✓"
+	case common.StatusWarning:
+		glyph = "!"
+	case common.StatusInconclusive:
+		glyph = "?"
+	case common.StatusError:
+		glyph = "✗"
+	case common.StatusSkipped:
+		glyph = "-"
+	}
+	_, _ = fmt.Fprintf(p.w, "%s %s (%s)\n", glyph, name, status)
 }

@@ -1,4 +1,6 @@
 # bash completion for dstp
+_dstp_checks="ping dns configured_dns records tcp udp tls http https traceroute whois mtu"
+
 _dstp() {
   local cur prev
   COMPREPLY=()
@@ -6,10 +8,26 @@ _dstp() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
   local opts="-a --addr -o --out -p -t --port --tcp-port --udp-port --http-port --dns --doh --doh-url --method --follow-redirects --insecure --extra --skip --config -q --quiet -v --version -h --help"
   case "${prev}" in
-    -o|--out) COMPREPLY=( $(compgen -W "plaintext json" -- ${cur}) ); return ;;
-    --method) COMPREPLY=( $(compgen -W "GET HEAD" -- ${cur}) ); return ;;
-    --skip) COMPREPLY=( $(compgen -W "ping dns configured_dns records tcp udp tls http https traceroute whois mtu" -- ${cur}) ); return ;;
+    -o|--out) COMPREPLY=( $(compgen -W "plaintext json" -- "${cur}") ); return ;;
+    --method) COMPREPLY=( $(compgen -W "GET HEAD" -- "${cur}") ); return ;;
+    --skip)
+      local prefix="" rest="${cur}"
+      if [[ "${cur}" == *,* ]]; then
+        prefix="${cur%,*},"
+        rest="${cur##*,}"
+      fi
+      local comps
+      comps=$(compgen -W "${_dstp_checks}" -- "${rest}")
+      COMPREPLY=()
+      local c
+      for c in ${comps}; do
+        COMPREPLY+=("${prefix}${c}")
+      done
+      return
+      ;;
   esac
-  COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  fi
 }
 complete -F _dstp dstp

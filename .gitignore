@@ -1,6 +1,13 @@
 .idea
 dstp
+dstp.exe
 !dstp/
 .DS_Store
+coverage.out
+coverage.html
+profiles/
+dist/
+*.test
+*.out
 
 .idea/

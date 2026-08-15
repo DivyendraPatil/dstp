@@ -2,7 +2,11 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +14,16 @@ import (
 
 	"github.com/fatih/color"
 	flag "github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/DivyendraPatil/dstp/internal/version"
+)
+
+// Sentinel errors for CLI exit mapping.
+var (
+	ErrHelp    = errors.New("help requested")
+	ErrVersion = errors.New("version requested")
+	ErrUsage   = errors.New("invalid usage")
 )
 
 // Config holds runtime options for dstp.
@@ -35,11 +46,12 @@ type Config struct {
 	UDPPort         string   `yaml:"udp_port"`
 	HTTPPort        string   `yaml:"http_port"`
 	Insecure        bool     `yaml:"insecure"`
-	Extra           bool     `yaml:"extra"` // enable traceroute/whois/mtu
+	Extra           bool     `yaml:"extra"`
 	ConfigPath      string   `yaml:"-"`
+	ExplicitConfig  bool     `yaml:"-"`
 }
 
-var usageStr = `Usage: dstp [OPTIONS] [ARGS]
+var usageStr = `Usage: dstp [OPTIONS] [TARGET]
 Options:
 	-a, --addr     <string>  Target URL, hostname, or IP                       [REQUIRED]
 	-o, --out      <string>  Output: json or plaintext                         [Default: plaintext]
@@ -51,32 +63,29 @@ Options:
 	--http-port    <string>  Cleartext HTTP port                               [Default: 80]
 	--dns          <string>  Custom DNS for ConfiguredDNS check
 	--doh                  Use DNS-over-HTTPS for DNS check
-	--doh-url      <string>  DoH endpoint
+	--doh-url      <string>  DoH JSON endpoint (provider-specific dns-json)
 	--method       <string>  HTTP(S) method: GET or HEAD                       [Default: GET]
 	--follow-redirects     Follow HTTP(S) redirects
-	--insecure             Skip TLS certificate verification
+	--insecure             Skip TLS certificate verification (security risk)
 	--extra                Also run traceroute, whois, and MTU probes
 	--skip         <list>    Skip: ping,dns,configured_dns,records,tcp,udp,tls,http,https,traceroute,whois,mtu
-	--config       <path>    Config file                                       [Default: ~/.config/dstp/config.yaml]
+	--config       <path>    Config file                                       [Default: $XDG config/dstp/config.yaml]
 	-q, --quiet            Suppress progress on stderr
 	-v, --version          Print version and exit
 	-h, --help             Show help and exit.
 `
 
-func UsageAndExit(err error) {
-	color.Red(err.Error())
-	fmt.Print(usageStr)
-	os.Exit(1)
+func PrintUsage(w io.Writer) {
+	fmt.Fprint(w, usageStr)
 }
 
-func HelpAndExit() {
-	fmt.Print(usageStr)
-	os.Exit(0)
+func PrintVersion(w io.Writer) {
+	fmt.Fprintln(w, version.String())
 }
 
-func VersionAndExit() {
-	fmt.Println(version.String())
-	os.Exit(0)
+func UsageError(w io.Writer, err error) {
+	fmt.Fprintln(w, color.RedString("%s", err.Error()))
+	PrintUsage(w)
 }
 
 func (c Config) TimeoutDuration() time.Duration {
@@ -86,6 +95,9 @@ func (c Config) TimeoutDuration() time.Duration {
 		if t <= 0 {
 			t = 6
 		}
+	}
+	if t > math.MaxInt64/int(time.Second) {
+		t = math.MaxInt64 / int(time.Second)
 	}
 	return time.Duration(t) * time.Second
 }
@@ -100,8 +112,15 @@ func (c Config) ShouldSkip(name string) bool {
 	return false
 }
 
-// ConfigureOptions loads optional YAML defaults, then applies CLI flags (flags win).
+// ConfigureOptions loads optional YAML defaults, then applies CLI flags (flags/positionals win).
 func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
+	if wantsHelp(args) {
+		return nil, ErrHelp
+	}
+	if wantsVersion(args) {
+		return nil, ErrVersion
+	}
+
 	opts := &Config{
 		Output:     "plaintext",
 		PingCount:  3,
@@ -112,16 +131,23 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 		HTTPPort:   "80",
 	}
 
-	cfgPath := findConfigFlag(args)
+	cfgPath, explicit := findConfigFlag(args)
+	opts.ExplicitConfig = explicit
 	if cfgPath == "" {
 		cfgPath = defaultConfigPath()
 	}
 	if cfgPath != "" {
-		if err := loadYAML(cfgPath, opts); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("config file: %w", err)
+		if err := loadYAML(cfgPath, opts); err != nil {
+			if explicit || !os.IsNotExist(err) {
+				return nil, fmt.Errorf("config file: %w", err)
+			}
+		} else {
+			opts.ConfigPath = cfgPath
 		}
-		opts.ConfigPath = cfgPath
 	}
+
+	yamlSkip := append([]string(nil), opts.Skip...)
+	yamlAddr := opts.Addr
 
 	var skip string
 	fs.StringVarP(&opts.Addr, "addr", "a", opts.Addr, "Target URL, hostname, or IP")
@@ -139,7 +165,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
 	fs.BoolVar(&opts.Insecure, "insecure", opts.Insecure, "Skip TLS verification")
 	fs.BoolVar(&opts.Extra, "extra", opts.Extra, "Enable traceroute/whois/mtu")
-	fs.StringVar(&skip, "skip", strings.Join(opts.Skip, ","), "Comma-separated checks to skip")
+	fs.StringVar(&skip, "skip", "", "Comma-separated checks to skip")
 	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "Path to config YAML")
 	fs.BoolVarP(&opts.Quiet, "quiet", "q", opts.Quiet, "Suppress progress")
 	fs.BoolVarP(&opts.ShowVersion, "version", "v", false, "Print version")
@@ -151,37 +177,67 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	values := fs.Args()
 
 	if opts.ShowVersion {
-		VersionAndExit()
+		return nil, ErrVersion
 	}
 	if opts.ShowHelp {
-		HelpAndExit()
-	}
-	if len(values) < 1 && opts.Addr == "" {
-		HelpAndExit()
-	}
-	if opts.Addr == "" {
-		if len(values) >= 1 {
-			opts.Addr = values[0]
-		} else {
-			return nil, fmt.Errorf("address cannot be empty")
-		}
+		return nil, ErrHelp
 	}
 
-	if skip != "" {
+	// Positional target overrides YAML/flag addr when provided.
+	if len(values) >= 1 {
+		opts.Addr = values[0]
+	} else if opts.Addr == "" {
+		opts.Addr = yamlAddr
+	}
+	if len(values) > 1 {
+		return nil, fmt.Errorf("%w: unexpected extra arguments %v", ErrUsage, values[1:])
+	}
+	if opts.Addr == "" {
+		return nil, fmt.Errorf("%w: target address is required", ErrUsage)
+	}
+
+	if fs.Changed("skip") {
 		opts.Skip = splitList(skip)
+	} else {
+		opts.Skip = yamlSkip
+	}
+
+	if opts.PingCount <= 0 {
+		return nil, fmt.Errorf("%w: ping count (-p) must be positive", ErrUsage)
+	}
+	if opts.Timeout == 0 || opts.Timeout < -1 {
+		return nil, fmt.Errorf("%w: timeout (-t) must be positive (or omit for default)", ErrUsage)
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(opts.HTTPMethod))
 	if method != "GET" && method != "HEAD" {
-		return nil, fmt.Errorf("unsupported HTTP method %q (use GET or HEAD)", opts.HTTPMethod)
+		return nil, fmt.Errorf("%w: unsupported HTTP method %q (use GET or HEAD)", ErrUsage, opts.HTTPMethod)
 	}
 	opts.HTTPMethod = method
 
 	out := strings.ToLower(strings.TrimSpace(opts.Output))
 	if out != "plaintext" && out != "json" {
-		return nil, fmt.Errorf("unsupported output type %q", opts.Output)
+		return nil, fmt.Errorf("%w: unsupported output type %q", ErrUsage, opts.Output)
 	}
 	opts.Output = out
+
+	known := map[string]struct{}{
+		"ping": {}, "dns": {}, "configured_dns": {}, "system_dns": {}, "records": {},
+		"tcp": {}, "udp": {}, "tls": {}, "http": {}, "https": {},
+		"traceroute": {}, "whois": {}, "mtu": {},
+	}
+	for _, s := range opts.Skip {
+		if _, ok := known[strings.ToLower(strings.TrimSpace(s))]; !ok {
+			return nil, fmt.Errorf("%w: unknown skip check %q", ErrUsage, s)
+		}
+	}
+
+	if opts.DoHURL != "" {
+		low := strings.ToLower(opts.DoHURL)
+		if !strings.HasPrefix(low, "https://") && !strings.HasPrefix(low, "http://127.0.0.1") && !strings.HasPrefix(low, "http://localhost") {
+			return nil, fmt.Errorf("%w: --doh-url must be https", ErrUsage)
+		}
+	}
 
 	return opts, nil
 }
@@ -197,25 +253,55 @@ func splitList(s string) []string {
 	return out
 }
 
-func findConfigFlag(args []string) string {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--config" && i+1 < len(args) {
-			return args[i+1]
-		}
-		if strings.HasPrefix(a, "--config=") {
-			return strings.TrimPrefix(a, "--config=")
+func wantsHelp(args []string) bool {
+	for _, a := range argsBeforeDashDash(args) {
+		if a == "-h" || a == "--help" {
+			return true
 		}
 	}
-	return ""
+	return false
+}
+
+func wantsVersion(args []string) bool {
+	for _, a := range argsBeforeDashDash(args) {
+		if a == "-v" || a == "--version" {
+			return true
+		}
+	}
+	return false
+}
+
+func argsBeforeDashDash(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[:i]
+		}
+	}
+	return args
+}
+
+func findConfigFlag(args []string) (path string, explicit bool) {
+	args = argsBeforeDashDash(args)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--config" && i+1 < len(args):
+			path = args[i+1]
+			explicit = true
+		case strings.HasPrefix(a, "--config="):
+			path = strings.TrimPrefix(a, "--config=")
+			explicit = true
+		}
+	}
+	return path, explicit
 }
 
 func defaultConfigPath() string {
-	home, err := os.UserHomeDir()
+	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "dstp", "config.yaml")
+	return filepath.Join(dir, "dstp", "config.yaml")
 }
 
 func loadYAML(path string, opts *Config) error {
@@ -223,5 +309,16 @@ func loadYAML(path string, opts *Config) error {
 	if err != nil {
 		return err
 	}
-	return yaml.Unmarshal(b, opts)
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(opts); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF && err != nil {
+		return fmt.Errorf("trailing YAML document: %w", err)
+	} else if err == nil {
+		return fmt.Errorf("trailing YAML document not allowed")
+	}
+	return nil
 }

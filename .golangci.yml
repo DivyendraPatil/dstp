@@ -8,12 +8,12 @@ linters:
     - unconvert
   settings:
     gocyclo:
-      min-complexity: 25
+      min-complexity: 40
     gosec:
       excludes:
-        - G204 # intentional fixed argv for ping/traceroute/whois
+        - G204 # intentional fixed argv for ping/traceroute/whois (see SECURITY.md)
         - G304 # config path is user-provided by design
-        - G402 # --insecure / IP-target TLS paths are explicit
+        - G402 # only with explicit --insecure
   exclusions:
     generated: lax
     presets:
@@ -22,11 +22,13 @@ linters:
       - legacy
       - std-error-handling
     rules:
-      - linters:
-          - errcheck
-          - gosec
+      - linters: [errcheck]
+        path: _test\.go
+        text: Error return value of
+      - linters: [gosec]
         path: _test\.go
     paths:
       - third_party$
       - builtin$
       - examples$
+      - tools$

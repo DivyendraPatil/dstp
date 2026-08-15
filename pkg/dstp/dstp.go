@@ -19,15 +19,20 @@ var ErrChecksFailed = errors.New("one or more checks failed")
 func RunAllTests(ctx context.Context, cfg config.Config) error {
 	common.InitColor()
 
-	addr, err := getAddr(cfg.Addr)
+	target, err := parseTarget(cfg.Addr)
 	if err != nil {
 		return err
 	}
+	addr := target.Host
 
 	timeout := cfg.TimeoutDuration()
 	port := cfg.Port
 	if port == "" {
-		port = "443"
+		if target.Port != "" && (target.Scheme == "https" || target.Scheme == "") {
+			port = target.Port
+		} else {
+			port = "443"
+		}
 	}
 	tcpPort := cfg.TCPPort
 	if tcpPort == "" {
@@ -39,7 +44,11 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 	}
 	httpPort := cfg.HTTPPort
 	if httpPort == "" {
-		httpPort = "80"
+		if target.Scheme == "http" && target.Port != "" {
+			httpPort = target.Port
+		} else {
+			httpPort = "80"
+		}
 	}
 
 	var result common.Result
@@ -50,25 +59,36 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 		run  func()
 	}
 
+	// When neither --dns nor --doh is set, ConfiguredDNS duplicates system DNS — skip it.
+	skipConfiguredDup := cfg.CustomDnsServer == "" && !cfg.DoH
+
 	jobs := []job{
 		{"ping", func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			progress.start("ping")
-			_ = ping.RunTest(ctx, common.Address(addr), cfg.PingCount, timeout, &result)
+			_ = ping.RunTest(jctx, common.Address(addr), cfg.PingCount, timeout, &result)
 			progress.done("ping", snapshot(&result, "ping"))
 		}},
 		{"dns", func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			progress.start("dns")
-			_ = lookup.Default(ctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, &result)
+			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, &result)
 			progress.done("dns", snapshot(&result, "dns"))
 		}},
 		{"configured_dns", func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			progress.start("configured_dns")
-			_ = lookup.Host(ctx, common.Address(addr), cfg.CustomDnsServer, timeout, &result)
+			_ = lookup.Host(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, &result)
 			progress.done("configured_dns", snapshot(&result, "configured_dns"))
 		}},
 		{"records", func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			progress.start("records")
-			_ = lookup.Records(ctx, common.Address(addr), timeout, &result)
+			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, timeout, &result)
 			progress.done("records", snapshot(&result, "records"))
 		}},
 		{"tcp", func() {
@@ -88,12 +108,12 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 		}},
 		{"http", func() {
 			progress.start("http")
-			_ = testHTTP(ctx, common.Address(addr), httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, &result)
+			_ = testHTTP(ctx, target, httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, &result)
 			progress.done("http", snapshot(&result, "http"))
 		}},
 		{"https", func() {
 			progress.start("https")
-			_ = testHTTPS(ctx, common.Address(addr), port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, &result)
+			_ = testHTTPS(ctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, &result)
 			progress.done("https", snapshot(&result, "https"))
 		}},
 		{"traceroute", func() {
@@ -117,7 +137,10 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 	for _, j := range jobs {
 		j := j
 		if isExtraCheck(j.name) && !cfg.Extra {
-			continue // omit from output unless --extra
+			continue
+		}
+		if j.name == "configured_dns" && skipConfiguredDup {
+			continue // omit duplicate of system DNS when no --dns/--doh
 		}
 		if shouldSkip(cfg, j.name) {
 			setSkipped(&result, j.name)
@@ -138,6 +161,9 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 		printWithColor(out)
 	}
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if result.Failed() {
 		return ErrChecksFailed
 	}

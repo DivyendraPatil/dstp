@@ -1,25 +1,69 @@
-.TH DSTP 1 "August 2026" "dstp" "User Commands"
-.SH NAME
-dstp \- run networking diagnostics against a host
-.SH SYNOPSIS
-.B dstp
-[\fIOPTIONS\fR] \fIHOST\fR
-.SH DESCRIPTION
-dstp runs parallel checks (ping, DNS, TCP/UDP, TLS, HTTP/HTTPS, and optionally traceroute/whois/MTU) and prints a summary. Exit status is 1 if any executed check fails.
-.SH OPTIONS
+.\" Manual page for dstp
+.Dd August 15, 2026
+.Dt DSTP 1
+.Os
+.Sh NAME
+.Nm dstp
+.Nd run parallel network connectivity checks
+.Sh SYNOPSIS
+.Nm
+.Op Fl a Ar addr
+.Op Fl o Ar plaintext|json
+.Op Fl p Ar count
+.Op Fl t Ar seconds
+.Op Fl -port Ar port
+.Op Fl -dns Ar server
+.Op Fl -doh
+.Op Fl -insecure
+.Op Fl -extra
+.Op Fl -skip Ar list
+.Op Fl -config Ar path
+.Op Fl q
+.Op Fl v
+.Op Fl h
+.Ar target
+.Sh DESCRIPTION
+.Nm
+probes a hostname, IP, or URL with parallel checks:
+ping, DNS, records, TCP, UDP, TLS, HTTP, and HTTPS.
+Optional
+.Fl -extra
+adds traceroute, whois, and MTU probes when those tools are installed.
+.Pp
+A full URL such as
+.Ql https://host:8443/health?q=1
+preserves scheme, port, path, and query for HTTP(S) checks.
+.Sh OPTIONS
 See
-.B dstp --help
-for the full flag list.
-.SH FILES
-.TP
-.I ~/.config/dstp/config.yaml
-Optional defaults (out, timeout, dns, skip, etc.). CLI flags override the file.
-.SH EXAMPLES
-.TP
-dstp example.com
-.TP
-dstp example.com -o json --skip ping
-.TP
-dstp example.com --extra -q
-.SH SEE ALSO
-ping(8), traceroute(8), whois(1)
+.Nm
+.Fl h
+for the complete flag list. Important flags:
+.Bl -tag -width insecure
+.It Fl -insecure
+Skip TLS certificate verification (security risk).
+.It Fl -skip Ar list
+Comma-separated check IDs to skip.
+.It Fl -config Ar path
+YAML config file. Default:
+.Pa $XDG_CONFIG_HOME/dstp/config.yaml
+(or platform equivalent via
+.Fn UserConfigDir ).
+Missing default config is ignored; a missing explicit
+.Fl -config
+path is an error.
+.El
+.Sh EXIT STATUS
+.Bl -tag -width XX
+.It 0
+Success, or help/version requested.
+.It 1
+One or more checks failed.
+.It 2
+Invalid usage or configuration.
+.It 130
+Interrupted (Ctrl-C).
+.El
+.Sh SEE ALSO
+.Xr ping 8 ,
+.Xr traceroute 8 ,
+.Xr whois 1

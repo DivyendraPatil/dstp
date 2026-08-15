@@ -15,11 +15,29 @@ import (
 )
 
 func main() {
-	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
 
-	opts, err := config.ConfigureOptions(fs, os.Args[1:])
+func run(args []string, stdout, stderr *os.File) int {
+	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	opts, err := config.ConfigureOptions(fs, args)
 	if err != nil {
-		config.UsageAndExit(err)
+		switch {
+		case errors.Is(err, config.ErrHelp):
+			config.PrintUsage(stdout)
+			return 0
+		case errors.Is(err, config.ErrVersion):
+			config.PrintVersion(stdout)
+			return 0
+		case errors.Is(err, config.ErrUsage):
+			config.UsageError(stderr, err)
+			return 2
+		default:
+			config.UsageError(stderr, err)
+			return 2
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -27,10 +45,19 @@ func main() {
 
 	err = dstp.RunAllTests(ctx, *opts)
 	if err != nil {
-		if errors.Is(err, dstp.ErrChecksFailed) {
-			os.Exit(1)
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(stderr, "interrupted")
+			return 130
 		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		if errors.Is(err, context.DeadlineExceeded) {
+			fmt.Fprintln(stderr, "deadline exceeded")
+			return 1
+		}
+		if errors.Is(err, dstp.ErrChecksFailed) {
+			return 1
+		}
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
+	return 0
 }

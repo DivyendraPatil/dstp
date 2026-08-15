@@ -32,4 +32,8 @@ func TestGetAddr(t *testing.T) {
 			}
 		})
 	}
+
+	if _, err := getAddr("-n"); err == nil {
+		t.Fatal("expected rejection of flag-like operand")
+	}
 }
