@@ -1,83 +1,98 @@
 # dstp
 
-Run common networking checks against a host — ping, DNS, TCP, TLS, and HTTPS — in one command.
+Run networking checks against a host — ping, DNS, TCP/UDP, TLS, HTTP/HTTPS — in one command.
 
 ```bash
+go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
 dstp example.com
+```
+
+If `dstp` is “command not found” after install, your `GOBIN` may not be on `PATH`. Fix:
+
+```bash
+# preferred: install into ~/go/bin (usually already on PATH)
+GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
+
+# ensure PATH includes it
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 Example output:
 
 ```text
 Ping: 12ms
-DNS: IPv4=93.184.216.34 IPv6=2606:2800:220:1:248:1893:25c8:1946
-ConfiguredDNS: IPv4=93.184.216.34 IPv6=2606:2800:220:1:248:1893:25c8:1946
+DNS: IPv4=… IPv6=…
+ConfiguredDNS: IPv4=… IPv6=…
 Records: A=…; AAAA=…; NS=…
 TCP: connected to example.com:443 in 40ms
-TLS: valid 73 days; issuer=…; proto=TLS1.3; cipher=…
+UDP: udp example.com:53 reachable (no reply in 12ms)
+TLS: valid 73 days; issuer=…; proto=TLS1.3; …
+HTTP: GET 301 Moved Permanently; TTFB=30ms; location=https://…
 HTTPS: GET 200 OK; TTFB=90ms; proto=TLS1.3
 ```
 
-Exit code is `1` if any check fails.
+Exit code is `1` if any check fails. `dstp -v` prints the build version.
 
-## Install (this repo)
-
-```bash
-go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
-```
-
-Or from a clone:
+## Install
 
 ```bash
-git clone https://github.com/DivyendraPatil/dstp
-cd dstp
-make
-./dstp example.com -q
+GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
+# or from a clone:
+make install
 ```
 
 Requires **Go 1.26+**.
 
-> `brew install dstp` and nix/AUR packages still track the original [ycd/dstp](https://github.com/ycd/dstp). Use `go install` above for **this** version.
+> `brew install dstp` still installs upstream [ycd/dstp](https://github.com/ycd/dstp). Use `go install` for **this** fork.
 
 ## Common options
 
 | Flag | What it does |
 |------|----------------|
-| `-a, --addr` | Target host/URL/IP (or pass as the first argument) |
-| `-o json` | Machine-readable output with `status` / `content` / `error` |
-| `-t 5` | Per-check timeout in seconds |
-| `--dns 8.8.8.8` | Resolver for the **ConfiguredDNS** check |
-| `--doh` | Use DNS-over-HTTPS for the **DNS** check |
-| `--method HEAD` | HTTPS request method (`GET` or `HEAD`) |
-| `--follow-redirects` | Follow HTTPS redirects (off by default) |
-| `--skip ping,records` | Skip named checks |
-| `-q` | Quiet (no progress on stderr) |
+| `-a, --addr` | Target host/URL/IP (or first argument) |
+| `-o json` | JSON with `status` / `content` / `error` |
+| `-t 5` | Per-check timeout (seconds) |
+| `--dns 8.8.8.8` | Resolver for **ConfiguredDNS** |
+| `--doh` | DNS-over-HTTPS for **DNS** |
+| `--method HEAD` | HTTP(S) method |
+| `--follow-redirects` | Follow redirects |
+| `--insecure` | Skip TLS verify (also noted for IP targets) |
+| `--extra` | Also run traceroute, whois, MTU |
+| `--skip ping,http` | Skip named checks |
+| `--config PATH` | YAML defaults (`~/.config/dstp/config.yaml`) |
+| `-q` | Quiet (no progress) |
+| `-v` | Version |
 
 ```bash
 dstp example.com -o json
 dstp example.com --dns 1.1.1.1 --doh
-dstp example.com --method HEAD --follow-redirects
-dstp example.com --skip ping -q
+dstp example.com --extra -q
+dstp 1.1.1.1 --insecure --skip http,https
 ```
 
-## What each check means
+### Config file example
 
-| Name | Meaning |
-|------|---------|
-| **Ping** | ICMP latency |
-| **DNS** | Default system resolver (or DoH with `--doh`) |
-| **ConfiguredDNS** | System resolver, or `--dns` if set |
-| **Records** | A / AAAA / CNAME / MX / NS / TXT |
-| **TCP** | Plain TCP connect (`--tcp-port`, default 443) |
-| **TLS** | Cert expiry, issuer, protocol, cipher, SANs |
-| **HTTPS** | Status, TTFB, redirects |
+`~/.config/dstp/config.yaml`:
 
-## Note for oh-my-zsh + Docker
+```yaml
+out: plaintext
+timeout: 5
+dns: 1.1.1.1
+skip: [ping]
+quiet: true
+```
 
-`dstp` may collide with the Docker plugin alias for `docker stop`. Add to `~/.zshrc`:
+## Completions & man page
 
-```zsh
-unalias dstp
+```bash
+# zsh
+source completions/dstp.zsh
+
+# bash
+source completions/dstp.bash
+
+# man
+man ./man/dstp.1
 ```
 
 ## License

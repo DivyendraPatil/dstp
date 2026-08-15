@@ -2,7 +2,7 @@ version: 2
 
 env:
   - GO111MODULE=on
-  - GOPROXY=https://goproxy.io
+  - GOPROXY=https://proxy.golang.org,direct
 
 before:
   hooks:
@@ -20,7 +20,12 @@ builds:
       - amd64
       - arm64
     dir: .
-    main: cmd/dstp/dstp.go
+    main: ./cmd/dstp
+    ldflags:
+      - -s -w
+      - -X github.com/DivyendraPatil/dstp/internal/version.Version={{.Version}}
+      - -X github.com/DivyendraPatil/dstp/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/DivyendraPatil/dstp/internal/version.Date={{.Date}}
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{- title .Os }}_{{ .Arch }}"
@@ -30,6 +35,8 @@ archives:
     files:
       - LICENSE
       - README.md
+      - completions/*
+      - man/*
 
 checksum:
   name_template: "checksums.txt"

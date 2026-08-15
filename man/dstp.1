@@ -1,0 +1,25 @@
+.TH DSTP 1 "August 2026" "dstp" "User Commands"
+.SH NAME
+dstp \- run networking diagnostics against a host
+.SH SYNOPSIS
+.B dstp
+[\fIOPTIONS\fR] \fIHOST\fR
+.SH DESCRIPTION
+dstp runs parallel checks (ping, DNS, TCP/UDP, TLS, HTTP/HTTPS, and optionally traceroute/whois/MTU) and prints a summary. Exit status is 1 if any executed check fails.
+.SH OPTIONS
+See
+.B dstp --help
+for the full flag list.
+.SH FILES
+.TP
+.I ~/.config/dstp/config.yaml
+Optional defaults (out, timeout, dns, skip, etc.). CLI flags override the file.
+.SH EXAMPLES
+.TP
+dstp example.com
+.TP
+dstp example.com -o json --skip ping
+.TP
+dstp example.com --extra -q
+.SH SEE ALSO
+ping(8), traceroute(8), whois(1)

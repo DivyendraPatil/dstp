@@ -28,7 +28,41 @@ func testTCP(ctx context.Context, address common.Address, port string, timeout t
 	return nil
 }
 
-func testTLS(ctx context.Context, address common.Address, port string, timeout time.Duration, result *common.Result) error {
+func testUDP(ctx context.Context, address common.Address, port string, timeout time.Duration, result *common.Result) error {
+	start := time.Now()
+	dialer := &net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "udp", net.JoinHostPort(string(address), port))
+	if err != nil {
+		result.Store(&result.UDP, common.Fail(err))
+		return err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(minDuration(timeout, 2*time.Second)))
+
+	// Send a tiny probe; many UDP services won't reply — success is "socket usable".
+	_, _ = conn.Write([]byte{0x00})
+	buf := make([]byte, 64)
+	n, rerr := conn.Read(buf)
+
+	elapsed := time.Since(start).Round(time.Millisecond)
+	target := net.JoinHostPort(string(address), port)
+	if rerr == nil {
+		result.Store(&result.UDP, common.OK(fmt.Sprintf("udp %s replied %dB in %s", target, n, elapsed)))
+		return nil
+	}
+	// Timeout / connection refused still means we could open a UDP socket toward the peer.
+	result.Store(&result.UDP, common.OK(fmt.Sprintf("udp %s reachable (no reply in %s)", target, elapsed)))
+	return nil
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func testTLS(ctx context.Context, address common.Address, port string, timeout time.Duration, insecure bool, result *common.Result) error {
 	dialer := &net.Dialer{Timeout: timeout}
 	rawConn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(string(address), port))
 	if err != nil {
@@ -38,10 +72,15 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 
 	serverName := string(address)
 	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
-	if net.ParseIP(serverName) != nil {
-		// IP targets: cannot verify hostname against typical certs.
+	verifyNote := ""
+	switch {
+	case insecure:
 		cfg.InsecureSkipVerify = true
-	} else {
+		verifyNote = "verify=skipped (--insecure)"
+	case net.ParseIP(serverName) != nil:
+		cfg.InsecureSkipVerify = true
+		verifyNote = "verify=skipped (IP target)"
+	default:
 		cfg.ServerName = serverName
 	}
 
@@ -85,6 +124,9 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 		"proto="+tlsVersion(state.Version),
 		"cipher="+tls.CipherSuiteName(state.CipherSuite),
 	)
+	if verifyNote != "" {
+		parts = append(parts, verifyNote)
+	}
 	if len(sans) > 0 {
 		parts = append(parts, "SANs="+strings.Join(sans, ","))
 	}
@@ -114,18 +156,31 @@ func tlsVersion(v uint16) string {
 	}
 }
 
-func testHTTPS(ctx context.Context, address common.Address, port string, timeout time.Duration, method string, followRedirects bool, result *common.Result) error {
-	rawURL := httpsURL(address.String(), port)
+func testHTTPS(ctx context.Context, address common.Address, port string, timeout time.Duration, method string, followRedirects, insecure bool, result *common.Result) error {
+	return testHTTPScheme(ctx, "https", address, port, timeout, method, followRedirects, insecure, &result.HTTPS, result)
+}
+
+func testHTTP(ctx context.Context, address common.Address, port string, timeout time.Duration, method string, followRedirects bool, result *common.Result) error {
+	return testHTTPScheme(ctx, "http", address, port, timeout, method, followRedirects, false, &result.HTTP, result)
+}
+
+func testHTTPScheme(ctx context.Context, scheme string, address common.Address, port string, timeout time.Duration, method string, followRedirects, insecure bool, dst *common.ResultPart, result *common.Result) error {
+	rawURL := buildURL(scheme, address.String(), port)
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
-		result.Store(&result.HTTPS, common.Fail(err))
+		result.Store(dst, common.Fail(err))
 		return err
 	}
 
 	redirects := 0
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if insecure && scheme == "https" {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
+	}
 	client := http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: transport,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			redirects = len(via)
 			if !followRedirects {
@@ -142,7 +197,7 @@ func testHTTPS(ctx context.Context, address common.Address, port string, timeout
 	resp, err := client.Do(req)
 	ttfb := time.Since(start)
 	if err != nil {
-		result.Store(&result.HTTPS, common.Fail(err))
+		result.Store(dst, common.Fail(err))
 		return err
 	}
 	defer resp.Body.Close()
@@ -165,19 +220,25 @@ func testHTTPS(ctx context.Context, address common.Address, port string, timeout
 	content := strings.Join(parts, "; ")
 	if resp.StatusCode >= 400 {
 		part := common.Fail(fmt.Errorf("%s", content))
-		result.Store(&result.HTTPS, part)
+		result.Store(dst, part)
 		return part.Error
 	}
-	result.Store(&result.HTTPS, common.OK(content))
+	result.Store(dst, common.OK(content))
 	return nil
 }
 
-func httpsURL(host, port string) string {
-	if port == "" || port == "443" {
-		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
-			return "https://" + net.JoinHostPort(host, "443")
-		}
-		return "https://" + host
+func httpsURL(host, port string) string { return buildURL("https", host, port) }
+
+func buildURL(scheme, host, port string) string {
+	defaultPort := "443"
+	if scheme == "http" {
+		defaultPort = "80"
 	}
-	return "https://" + net.JoinHostPort(host, port)
+	if port == "" || port == defaultPort {
+		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+			return scheme + "://" + net.JoinHostPort(host, defaultPort)
+		}
+		return scheme + "://" + host
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
 }

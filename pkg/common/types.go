@@ -1,4 +1,3 @@
-// Package common holds shared result types and terminal helpers for dstp.
 package common
 
 import (
@@ -36,35 +35,33 @@ func (o ResultPart) message() string {
 	return o.Content
 }
 
-// OK is a successful check result.
 func OK(content string) ResultPart { return ResultPart{Content: content, Status: "ok"} }
+func Fail(err error) ResultPart    { return ResultPart{Error: err, Status: "error"} }
+func Skipped() ResultPart          { return ResultPart{Content: "skipped", Status: "skipped"} }
 
-// Fail is a failed check result.
-func Fail(err error) ResultPart { return ResultPart{Error: err, Status: "error"} }
-
-// Skipped marks a check that was not run.
-func Skipped() ResultPart { return ResultPart{Content: "skipped", Status: "skipped"} }
-
-// Result aggregates all connectivity checks.
+// Result aggregates all connectivity checks. Field order here drives plaintext output order.
 type Result struct {
-	Ping      ResultPart `json:"ping"`
-	DNS       ResultPart `json:"dns"`            // default resolver (or DoH)
-	SystemDNS ResultPart `json:"system_dns"`     // configured resolver (--dns)
-	Records   ResultPart `json:"records"`        // A/AAAA/CNAME/MX/NS/TXT
-	TCP       ResultPart `json:"tcp"`
-	TLS       ResultPart `json:"tls"`
-	HTTPS     ResultPart `json:"https"`
-	Mu        sync.Mutex `json:"-"`
+	Ping       ResultPart `json:"ping"`
+	DNS        ResultPart `json:"dns"`
+	SystemDNS  ResultPart `json:"system_dns"`
+	Records    ResultPart `json:"records"`
+	TCP        ResultPart `json:"tcp"`
+	UDP        ResultPart `json:"udp"`
+	TLS        ResultPart `json:"tls"`
+	HTTP       ResultPart `json:"http"`
+	HTTPS      ResultPart `json:"https"`
+	Traceroute ResultPart `json:"traceroute"`
+	Whois      ResultPart `json:"whois"`
+	MTU        ResultPart `json:"mtu"`
+	Mu         sync.Mutex `json:"-"`
 }
 
-// Store writes a part under the result mutex.
 func (r *Result) Store(dst *ResultPart, part ResultPart) {
 	r.Mu.Lock()
 	*dst = part
 	r.Mu.Unlock()
 }
 
-// Failed reports whether any executed check failed.
 func (r *Result) Failed() bool {
 	for _, p := range r.parts() {
 		if p.part.Status == "error" || p.part.Error != nil {
@@ -87,12 +84,16 @@ func (r *Result) parts() []namedPart {
 		{"ConfiguredDNS", "system_dns", r.SystemDNS},
 		{"Records", "records", r.Records},
 		{"TCP", "tcp", r.TCP},
+		{"UDP", "udp", r.UDP},
 		{"TLS", "tls", r.TLS},
+		{"HTTP", "http", r.HTTP},
 		{"HTTPS", "https", r.HTTPS},
+		{"Traceroute", "traceroute", r.Traceroute},
+		{"Whois", "whois", r.Whois},
+		{"MTU", "mtu", r.MTU},
 	}
 }
 
-// Output renders plaintext or JSON.
 func (r *Result) Output(outputType string) string {
 	if outputType == "json" {
 		return r.jsonOutput()
@@ -148,7 +149,6 @@ func (r *Result) jsonOutput() string {
 	return string(byt)
 }
 
-// InitColor disables ANSI colors when stdout is not a TTY or NO_COLOR is set.
 func InitColor() {
 	if os.Getenv("NO_COLOR") != "" || !isatty.IsTerminal(os.Stdout.Fd()) {
 		SetNoColor(true)

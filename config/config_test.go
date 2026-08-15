@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,5 +40,28 @@ func TestConfigureOptionsRejectsBadMethod(t *testing.T) {
 	_, err := ConfigureOptions(fs, []string{"example.com", "--method", "POST"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestConfigureOptionsLoadsYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("quiet: true\ntimeout: 9\nskip: [ping]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	opts, err := ConfigureOptions(fs, []string{"--config", path, "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Quiet || opts.Timeout != 9 || !opts.ShouldSkip("ping") {
+		t.Fatalf("%+v", opts)
+	}
+}
+
+func TestSplitList(t *testing.T) {
+	got := splitList(" a, b , ,c ")
+	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
+		t.Fatalf("%v", got)
 	}
 }

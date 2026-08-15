@@ -1,65 +1,84 @@
+// Package config parses dstp CLI flags, optional config file, and defaults.
 package config
 
 import (
-	flag "github.com/spf13/pflag"
-
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
+	flag "github.com/spf13/pflag"
+	"gopkg.in/yaml.v3"
+
+	"github.com/DivyendraPatil/dstp/internal/version"
 )
 
+// Config holds runtime options for dstp.
 type Config struct {
-	Addr            string
-	Output          string
-	PingCount       int
-	Timeout         int
-	ShowHelp        bool
-	Port            string
-	CustomDnsServer string
-	Quiet           bool
-	Skip            []string
-	HTTPMethod      string
-	FollowRedirects bool
-	DoH             bool
-	DoHURL          string
-	TCPPort         string
+	Addr            string   `yaml:"addr"`
+	Output          string   `yaml:"out"`
+	PingCount       int      `yaml:"ping_count"`
+	Timeout         int      `yaml:"timeout"`
+	ShowHelp        bool     `yaml:"-"`
+	ShowVersion     bool     `yaml:"-"`
+	Port            string   `yaml:"port"`
+	CustomDnsServer string   `yaml:"dns"`
+	Quiet           bool     `yaml:"quiet"`
+	Skip            []string `yaml:"skip"`
+	HTTPMethod      string   `yaml:"method"`
+	FollowRedirects bool     `yaml:"follow_redirects"`
+	DoH             bool     `yaml:"doh"`
+	DoHURL          string   `yaml:"doh_url"`
+	TCPPort         string   `yaml:"tcp_port"`
+	UDPPort         string   `yaml:"udp_port"`
+	HTTPPort        string   `yaml:"http_port"`
+	Insecure        bool     `yaml:"insecure"`
+	Extra           bool     `yaml:"extra"` // enable traceroute/whois/mtu
+	ConfigPath      string   `yaml:"-"`
 }
 
 var usageStr = `Usage: dstp [OPTIONS] [ARGS]
 Options:
-	-a, --addr     <string>  The URL or the IP address to run tests against    [REQUIRED]
-	-o, --out      <string>  Output type: json or plaintext                    [Default: plaintext]
-	-p             <int>     Number of ping packets                            [Default: 3]
-	-t             <int>     Timeout in seconds for each check                 [Default: 2s per ping packet]
-	--port         <string>  Port for TLS/HTTPS                                [Default: 443]
-	--tcp-port     <string>  Port for plain TCP connect                        [Default: same as --port or 443]
-	--dns          <string>  Custom DNS server for configured DNS check        [Default: system resolver]
-	--doh                  Use DNS-over-HTTPS for the default DNS check
-	--doh-url      <string>  DoH endpoint                                      [Default: https://cloudflare-dns.com/dns-query]
-	--method       <string>  HTTP method for HTTPS check: GET or HEAD          [Default: GET]
-	--follow-redirects     Follow HTTPS redirects (off by default)
-	--skip         <list>    Skip checks: ping,dns,configured_dns,records,tcp,tls,https
-	-q, --quiet            Suppress progress output on stderr
-	-h, --help             Show this message and exit.
+	-a, --addr     <string>  Target URL, hostname, or IP                       [REQUIRED]
+	-o, --out      <string>  Output: json or plaintext                         [Default: plaintext]
+	-p             <int>     Ping packet count                                 [Default: 3]
+	-t             <int>     Per-check timeout (seconds)                       [Default: 2s * ping count]
+	--port         <string>  TLS/HTTPS port                                    [Default: 443]
+	--tcp-port     <string>  TCP connect port                                  [Default: --port or 443]
+	--udp-port     <string>  UDP probe port                                    [Default: 53]
+	--http-port    <string>  Cleartext HTTP port                               [Default: 80]
+	--dns          <string>  Custom DNS for ConfiguredDNS check
+	--doh                  Use DNS-over-HTTPS for DNS check
+	--doh-url      <string>  DoH endpoint
+	--method       <string>  HTTP(S) method: GET or HEAD                       [Default: GET]
+	--follow-redirects     Follow HTTP(S) redirects
+	--insecure             Skip TLS certificate verification
+	--extra                Also run traceroute, whois, and MTU probes
+	--skip         <list>    Skip: ping,dns,configured_dns,records,tcp,udp,tls,http,https,traceroute,whois,mtu
+	--config       <path>    Config file                                       [Default: ~/.config/dstp/config.yaml]
+	-q, --quiet            Suppress progress on stderr
+	-v, --version          Print version and exit
+	-h, --help             Show help and exit.
 `
 
-// UsageAndExit prints usage and exits the program.
 func UsageAndExit(err error) {
 	color.Red(err.Error())
 	fmt.Print(usageStr)
 	os.Exit(1)
 }
 
-// HelpAndExit prints help and exits the program.
 func HelpAndExit() {
 	fmt.Print(usageStr)
 	os.Exit(0)
 }
 
-// TimeoutDuration returns the per-check timeout.
+func VersionAndExit() {
+	fmt.Println(version.String())
+	os.Exit(0)
+}
+
 func (c Config) TimeoutDuration() time.Duration {
 	t := c.Timeout
 	if t < 0 {
@@ -71,7 +90,6 @@ func (c Config) TimeoutDuration() time.Duration {
 	return time.Duration(t) * time.Second
 }
 
-// ShouldSkip reports whether a named check should be skipped.
 func (c Config) ShouldSkip(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	for _, s := range c.Skip {
@@ -82,39 +100,65 @@ func (c Config) ShouldSkip(name string) bool {
 	return false
 }
 
-// ConfigureOptions parses CLI options.
+// ConfigureOptions loads optional YAML defaults, then applies CLI flags (flags win).
 func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
-	opts := &Config{}
-	var skip string
+	opts := &Config{
+		Output:     "plaintext",
+		PingCount:  3,
+		Timeout:    -1,
+		DoHURL:     "https://cloudflare-dns.com/dns-query",
+		HTTPMethod: "GET",
+		UDPPort:    "53",
+		HTTPPort:   "80",
+	}
 
-	fs.StringVarP(&opts.Addr, "addr", "a", "", "The URL or the IP address to run tests against")
-	fs.StringVarP(&opts.Output, "out", "o", "plaintext", "The type of the output")
-	fs.StringVar(&opts.Port, "port", "", "Port for testing TLS and HTTPS connectivity")
-	fs.StringVar(&opts.TCPPort, "tcp-port", "", "Port for plain TCP connect check")
-	fs.IntVarP(&opts.PingCount, "p", "p", 3, "Number of ping packets")
-	fs.IntVarP(&opts.Timeout, "t", "t", -1, "Timeout in seconds for each check")
-	fs.StringVar(&opts.CustomDnsServer, "dns", "", "Custom DNS server for the configured DNS check")
-	fs.BoolVar(&opts.DoH, "doh", false, "Use DNS-over-HTTPS for the default DNS check")
-	fs.StringVar(&opts.DoHURL, "doh-url", "https://cloudflare-dns.com/dns-query", "DoH endpoint URL")
-	fs.StringVar(&opts.HTTPMethod, "method", "GET", "HTTP method for HTTPS check")
-	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", false, "Follow HTTPS redirects")
-	fs.StringVar(&skip, "skip", "", "Comma-separated checks to skip")
-	fs.BoolVarP(&opts.Quiet, "quiet", "q", false, "Suppress progress output")
-	fs.BoolVarP(&opts.ShowHelp, "help", "h", false, "Show help message")
+	cfgPath := findConfigFlag(args)
+	if cfgPath == "" {
+		cfgPath = defaultConfigPath()
+	}
+	if cfgPath != "" {
+		if err := loadYAML(cfgPath, opts); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("config file: %w", err)
+		}
+		opts.ConfigPath = cfgPath
+	}
+
+	var skip string
+	fs.StringVarP(&opts.Addr, "addr", "a", opts.Addr, "Target URL, hostname, or IP")
+	fs.StringVarP(&opts.Output, "out", "o", opts.Output, "Output type")
+	fs.StringVar(&opts.Port, "port", opts.Port, "TLS/HTTPS port")
+	fs.StringVar(&opts.TCPPort, "tcp-port", opts.TCPPort, "TCP connect port")
+	fs.StringVar(&opts.UDPPort, "udp-port", opts.UDPPort, "UDP probe port")
+	fs.StringVar(&opts.HTTPPort, "http-port", opts.HTTPPort, "Cleartext HTTP port")
+	fs.IntVarP(&opts.PingCount, "p", "p", opts.PingCount, "Ping packet count")
+	fs.IntVarP(&opts.Timeout, "t", "t", opts.Timeout, "Per-check timeout seconds")
+	fs.StringVar(&opts.CustomDnsServer, "dns", opts.CustomDnsServer, "Custom DNS server")
+	fs.BoolVar(&opts.DoH, "doh", opts.DoH, "Use DNS-over-HTTPS")
+	fs.StringVar(&opts.DoHURL, "doh-url", opts.DoHURL, "DoH endpoint URL")
+	fs.StringVar(&opts.HTTPMethod, "method", opts.HTTPMethod, "HTTP(S) method")
+	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
+	fs.BoolVar(&opts.Insecure, "insecure", opts.Insecure, "Skip TLS verification")
+	fs.BoolVar(&opts.Extra, "extra", opts.Extra, "Enable traceroute/whois/mtu")
+	fs.StringVar(&skip, "skip", strings.Join(opts.Skip, ","), "Comma-separated checks to skip")
+	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "Path to config YAML")
+	fs.BoolVarP(&opts.Quiet, "quiet", "q", opts.Quiet, "Suppress progress")
+	fs.BoolVarP(&opts.ShowVersion, "version", "v", false, "Print version")
+	fs.BoolVarP(&opts.ShowHelp, "help", "h", false, "Show help")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	values := fs.Args()
 
+	if opts.ShowVersion {
+		VersionAndExit()
+	}
 	if opts.ShowHelp {
 		HelpAndExit()
 	}
-
-	if !opts.ShowHelp && len(values) < 1 && opts.Addr == "" {
+	if len(values) < 1 && opts.Addr == "" {
 		HelpAndExit()
 	}
-
 	if opts.Addr == "" {
 		if len(values) >= 1 {
 			opts.Addr = values[0]
@@ -124,7 +168,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	}
 
 	if skip != "" {
-		opts.Skip = strings.Split(skip, ",")
+		opts.Skip = splitList(skip)
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(opts.HTTPMethod))
@@ -135,9 +179,49 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 
 	out := strings.ToLower(strings.TrimSpace(opts.Output))
 	if out != "plaintext" && out != "json" {
-		return nil, fmt.Errorf("unsupported output type %q (use json or plaintext)", opts.Output)
+		return nil, fmt.Errorf("unsupported output type %q", opts.Output)
 	}
 	opts.Output = out
 
 	return opts, nil
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func findConfigFlag(args []string) string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, "--config=") {
+			return strings.TrimPrefix(a, "--config=")
+		}
+	}
+	return ""
+}
+
+func defaultConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "dstp", "config.yaml")
+}
+
+func loadYAML(path string, opts *Config) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(b, opts)
 }

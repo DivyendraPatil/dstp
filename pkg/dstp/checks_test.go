@@ -27,7 +27,7 @@ func TestRunAllTestsSkipAll(t *testing.T) {
 		Quiet:     true,
 		Timeout:   1,
 		PingCount: 1,
-		Skip:      []string{"ping", "dns", "configured_dns", "records", "tcp", "tls", "https"},
+		Skip:      []string{"ping", "dns", "configured_dns", "records", "tcp", "udp", "tls", "http", "https"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestHTTPSLocal(t *testing.T) {
 	}
 
 	var result common.Result
-	_ = testHTTPS(context.Background(), common.Address(host), port, 2*time.Second, "GET", false, &result)
+	_ = testHTTPS(context.Background(), common.Address(host), port, 2*time.Second, "GET", false, false, &result)
 	if result.HTTPS.Status == "" {
 		t.Fatal("expected https result")
 	}
@@ -99,7 +99,7 @@ func TestTLSLocalCert(t *testing.T) {
 
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	var result common.Result
-	_ = testTLS(context.Background(), common.Address("127.0.0.1"), port, 2*time.Second, &result)
+	_ = testTLS(context.Background(), common.Address("127.0.0.1"), port, 2*time.Second, false, &result)
 	if result.TLS.Content == "" && result.TLS.Error == nil {
 		t.Fatal("expected tls result")
 	}
