@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,8 +95,10 @@ func (c Config) TimeoutDuration() time.Duration {
 			t = 6
 		}
 	}
-	if t > math.MaxInt64/int(time.Second) {
-		t = math.MaxInt64 / int(time.Second)
+	// Cap to keep Duration multiplication portable on 32-bit arches.
+	const maxSeconds = 24 * 60 * 60
+	if t > maxSeconds {
+		t = maxSeconds
 	}
 	return time.Duration(t) * time.Second
 }
