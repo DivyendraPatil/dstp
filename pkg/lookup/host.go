@@ -14,7 +14,7 @@ import (
 )
 
 // Default resolves addr with the system default resolver, optionally via DoH.
-func Default(ctx context.Context, addr common.Address, timeout time.Duration, doh bool, dohURL, dohBootstrap string, result *common.Result) error {
+func Default(ctx context.Context, addr common.Address, timeout time.Duration, doh bool, dohURL, dohBootstrap string, dohFormat DoHFormat, result *common.Result) error {
 	lookupCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -27,7 +27,7 @@ func Default(ctx context.Context, addr common.Address, timeout time.Duration, do
 	var addrs []string
 	var err error
 	if doh {
-		addrs, err = lookupDoH(lookupCtx, dohURL, host, dohBootstrap, timeout)
+		addrs, err = lookupDoH(lookupCtx, dohURL, host, dohBootstrap, timeout, dohFormat)
 	} else {
 		addrs, err = net.DefaultResolver.LookupHost(lookupCtx, host)
 	}
@@ -63,7 +63,7 @@ func Host(ctx context.Context, addr common.Address, customDnsServer string, time
 }
 
 // Records looks up A/AAAA/CNAME/MX/NS/TXT (or PTR for literal IPs) via the selected backend.
-func Records(ctx context.Context, addr common.Address, customDNS string, doh bool, dohURL string, timeout time.Duration, result *common.Result) error {
+func Records(ctx context.Context, addr common.Address, customDNS string, doh bool, dohURL string, dohFormat DoHFormat, timeout time.Duration, result *common.Result) error {
 	lookupCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -85,7 +85,7 @@ func Records(ctx context.Context, addr common.Address, customDNS string, doh boo
 	r := resolverFor(customDNS, timeout)
 	if doh && customDNS == "" {
 		// Prefer DoH for A/AAAA; other types still use system unless custom DNS set.
-		addrs, err := lookupDoH(lookupCtx, dohURL, host, "", timeout)
+		addrs, err := lookupDoH(lookupCtx, dohURL, host, "", timeout, dohFormat)
 		if err != nil {
 			result.Store(&result.Records, common.Fail(err))
 			return err

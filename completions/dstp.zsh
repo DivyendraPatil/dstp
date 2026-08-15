@@ -13,8 +13,10 @@ _arguments -C \
   '--udp-port[UDP port]:port:' \
   '--http-port[HTTP port]:port:' \
   '--dns[custom DNS]:dns:' \
-  '--doh[use DNS-over-HTTPS JSON endpoint]' \
+  '--doh[use DNS-over-HTTPS]' \
   '--doh-url[DoH URL]:url:' \
+  '--doh-format[DoH format]:format:(rfc8484 json)' \
+  '--doh-bootstrap[DoH bootstrap IP]:ip:' \
   '--method[HTTP method]:method:(GET HEAD)' \
   '--follow-redirects[follow redirects]' \
   '--insecure[skip TLS verify]' \

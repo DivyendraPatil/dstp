@@ -6,10 +6,11 @@ _dstp() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  local opts="-a --addr -o --out -p -t --port --tcp-port --udp-port --http-port --dns --doh --doh-url --method --follow-redirects --insecure --extra --skip --config -q --quiet -v --version -h --help"
+  local opts="-a --addr -o --out -p -t --port --tcp-port --udp-port --http-port --dns --doh --doh-url --doh-format --doh-bootstrap --method --follow-redirects --insecure --extra --skip --config -q --quiet -v --version -h --help"
   case "${prev}" in
     -o|--out) COMPREPLY=( $(compgen -W "plaintext json" -- "${cur}") ); return ;;
     --method) COMPREPLY=( $(compgen -W "GET HEAD" -- "${cur}") ); return ;;
+    --doh-format) COMPREPLY=( $(compgen -W "rfc8484 json" -- "${cur}") ); return ;;
     --skip)
       local prefix="" rest="${cur}"
       if [[ "${cur}" == *,* ]]; then

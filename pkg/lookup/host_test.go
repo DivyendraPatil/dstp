@@ -23,7 +23,7 @@ func TestLookup(t *testing.T) {
 
 func TestRecords(t *testing.T) {
 	var result common.Result
-	err := Records(context.Background(), common.Address("example.com"), "", false, "", 5*time.Second, &result)
+	err := Records(context.Background(), common.Address("example.com"), "", false, "", "", 5*time.Second, &result)
 	if err != nil {
 		t.Skipf("live DNS unavailable: %v", err)
 	}

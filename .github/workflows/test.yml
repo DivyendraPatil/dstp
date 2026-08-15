@@ -46,7 +46,7 @@ jobs:
           total=$(go tool cover -func=coverage.out | awk '/^total:/{print substr($3,1,length($3)-1)}')
           echo "total coverage: ${total}%"
           # Ratchet: fail if overall coverage drops below this floor.
-          awk -v t="$total" 'BEGIN{ if ((t+0) < 45.0) { print "coverage " t "% below floor 45%"; exit 1 } }'
+          awk -v t="$total" 'BEGIN{ if ((t+0) < 48.0) { print "coverage " t "% below floor 48%"; exit 1 } }'
 
       - name: Race tests
         if: runner.os == 'Linux'
@@ -65,7 +65,8 @@ jobs:
         uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
         with:
           files: coverage.out
-          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
   goreleaser-snapshot:
     name: Release snapshot
@@ -79,4 +80,5 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Snapshot
-        run: go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish
+        # Skip sign (needs OIDC+cosign) and publish for PR/main smoke builds.
+        run: go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign

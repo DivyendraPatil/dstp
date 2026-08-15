@@ -95,7 +95,7 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			progress.start(string(CheckDNS))
-			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, cfg.DoHBootstrap, result)
+			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, cfg.DoHBootstrap, lookup.DoHFormat(cfg.DoHFormat), result)
 			progress.done(string(CheckDNS), getByID(result, CheckDNS))
 		}},
 		{lookupMetaMust(CheckConfiguredDNS), func() {
@@ -109,7 +109,7 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			progress.start(string(CheckRecords))
-			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, timeout, result)
+			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, lookup.DoHFormat(cfg.DoHFormat), timeout, result)
 			progress.done(string(CheckRecords), getByID(result, CheckRecords))
 		}},
 		{lookupMetaMust(CheckTCP), func() {

@@ -43,6 +43,7 @@ type Config struct {
 	DoH             bool     `yaml:"doh"`
 	DoHURL          string   `yaml:"doh_url"`
 	DoHBootstrap    string   `yaml:"doh_bootstrap"` // optional IP to dial while keeping TLS SNI
+	DoHFormat       string   `yaml:"doh_format"`    // rfc8484 (default) or json
 	TCPPort         string   `yaml:"tcp_port"`
 	UDPPort         string   `yaml:"udp_port"`
 	HTTPPort        string   `yaml:"http_port"`
@@ -64,7 +65,8 @@ Options:
 	--http-port    <string>  Cleartext HTTP port                               [Default: 80]
 	--dns          <string>  Custom DNS for ConfiguredDNS check
 	--doh                  Use DNS-over-HTTPS for DNS check
-	--doh-url      <string>  DoH JSON endpoint (provider-specific dns-json)
+	--doh-url      <string>  DoH endpoint                                       [Default: Cloudflare]
+	--doh-format   <string>  DoH format: rfc8484 (dns-message) or json         [Default: rfc8484]
 	--doh-bootstrap <ip>   Dial this IP for DoH while keeping TLS server name
 	--method       <string>  HTTP(S) method: GET or HEAD                       [Default: GET]
 	--follow-redirects     Follow HTTP(S) redirects
@@ -130,6 +132,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 		PingCount:  3,
 		Timeout:    -1,
 		DoHURL:     "https://cloudflare-dns.com/dns-query",
+		DoHFormat:  "rfc8484",
 		HTTPMethod: "GET",
 		UDPPort:    "53",
 		HTTPPort:   "80",
@@ -165,6 +168,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	fs.StringVar(&opts.CustomDnsServer, "dns", opts.CustomDnsServer, "Custom DNS server")
 	fs.BoolVar(&opts.DoH, "doh", opts.DoH, "Use DNS-over-HTTPS")
 	fs.StringVar(&opts.DoHURL, "doh-url", opts.DoHURL, "DoH endpoint URL")
+	fs.StringVar(&opts.DoHFormat, "doh-format", opts.DoHFormat, "DoH format: rfc8484 or json")
 	fs.StringVar(&opts.DoHBootstrap, "doh-bootstrap", opts.DoHBootstrap, "DoH dial IP (keep TLS SNI)")
 	fs.StringVar(&opts.HTTPMethod, "method", opts.HTTPMethod, "HTTP(S) method")
 	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
@@ -248,6 +252,14 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 			return nil, fmt.Errorf("%w: --doh-bootstrap must be an IP address", ErrUsage)
 		}
 	}
+	fmtDoH := strings.ToLower(strings.TrimSpace(opts.DoHFormat))
+	if fmtDoH == "" {
+		fmtDoH = "rfc8484"
+	}
+	if fmtDoH != "rfc8484" && fmtDoH != "json" {
+		return nil, fmt.Errorf("%w: --doh-format must be rfc8484 or json", ErrUsage)
+	}
+	opts.DoHFormat = fmtDoH
 
 	return opts, nil
 }

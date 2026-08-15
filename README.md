@@ -26,7 +26,7 @@ GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@
 make install
 ```
 
-Binary releases (when published): download the archive for your OS from GitHub Releases, verify `checksums.txt` (and SBOM when present), then place `dstp` on your `PATH`.
+Binary releases (when published): download the archive for your OS from GitHub Releases, verify `checksums.txt`, and optionally verify the Cosign/Sigstore bundle (`checksums.txt.sigstore.json`) with `cosign verify-blob`. SBOMs ship alongside archives.
 
 > `brew install dstp` still installs upstream [ycd/dstp](https://github.com/ycd/dstp). Use `go install` for **this** fork.
 
@@ -39,8 +39,9 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | `-t 5` | Per-check timeout seconds (must be positive; default `2 * ping count`) |
 | `-p 3` | Ping count (must be positive) |
 | `--dns 8.8.8.8` | Resolver for **ConfiguredDNS** / records |
-| `--doh` | Provider JSON DoH (`application/dns-json`) for **DNS** (not RFC 8484 dns-message) |
+| `--doh` | DNS-over-HTTPS for **DNS** (default RFC 8484 `dns-message`) |
 | `--doh-url` | HTTPS DoH endpoint |
+| `--doh-format` | `rfc8484` (default) or `json` (provider `dns-json`) |
 | `--doh-bootstrap` | Dial this IP for DoH while keeping TLS server name (bootstrap without system DNS) |
 | `--method HEAD` | HTTP(S) method |
 | `--follow-redirects` | Follow redirects |

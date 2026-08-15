@@ -51,4 +51,14 @@ checksum:
 sboms:
   - artifacts: archive
 
-
+# Keyless Cosign (Sigstore) over checksums — requires cosign in PATH and
+# GitHub OIDC (id-token: write) on the release workflow.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--bundle=${signature}"
+      - "${artifact}"
+    artifacts: checksum
