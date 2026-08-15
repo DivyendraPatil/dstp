@@ -40,7 +40,7 @@ func TestRunPositionalWithSkipAll(t *testing.T) {
 	var out, errb bytes.Buffer
 	code := run([]string{
 		"example.com", "-q", "-o", "json", "-t", "2", "-p", "1",
-		"--skip", "ping,dns,configured_dns,records,tcp,udp,tls,http,https",
+		"--skip", "ping,dns,configured_dns,records,mail,dnssec,tcp,udp,tls,http,https,http3,cdn",
 	}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%s", code, errb.String())

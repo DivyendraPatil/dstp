@@ -3,6 +3,8 @@ package dstp
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/asn1"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/DivyendraPatil/dstp/pkg/common"
 )
@@ -60,6 +64,11 @@ func testUDP(ctx context.Context, address common.Address, port string, timeout t
 
 	// DNS-shaped probe (works for port 53); other ports may not reply.
 	payload := []byte{0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if port == "53" {
+		if q, qerr := buildUDP53Query("."); qerr == nil {
+			payload = q
+		}
+	}
 	if _, err := conn.Write(payload); err != nil {
 		result.Store(&result.UDP, common.Fail(fmt.Errorf("udp write: %w", err)))
 		return err
@@ -149,17 +158,34 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 		sans = append(sans[:5], fmt.Sprintf("…(+%d)", len(sans)-5))
 	}
 
+	chainLen := len(state.PeerCertificates)
+	ocsp := "ocsp=none"
+	if len(state.OCSPResponse) > 0 {
+		ocsp = fmt.Sprintf("ocsp=stapled(%dB)", len(state.OCSPResponse))
+	}
+	ct := "ct=none"
+	if n := len(state.SignedCertificateTimestamps); n > 0 {
+		ct = fmt.Sprintf("ct=scts:%d", n)
+	} else if hasEmbeddedSCT(cert) {
+		ct = "ct=embedded"
+	}
+
 	var parts []string
 	switch {
 	case until > 30*24*time.Hour:
 		parts = append(parts, fmt.Sprintf("valid until %s", cert.NotAfter.Format("2006-01-02")))
+	case until > 14*24*time.Hour:
+		parts = append(parts, fmt.Sprintf("expires in %s (warn <30d)", until.Round(time.Hour)))
 	case until > 24*time.Hour:
-		parts = append(parts, fmt.Sprintf("expires in %s (warn)", until.Round(time.Hour)))
+		parts = append(parts, fmt.Sprintf("expires in %s (warn <14d)", until.Round(time.Hour)))
 	default:
-		parts = append(parts, fmt.Sprintf("expires in %s (warn)", until.Round(time.Minute)))
+		parts = append(parts, fmt.Sprintf("expires in %s (warn <1d)", until.Round(time.Minute)))
 	}
 	parts = append(parts,
 		"issuer="+cert.Issuer.CommonName,
+		fmt.Sprintf("chain=%d", chainLen),
+		ocsp,
+		ct,
 		"proto="+tlsVersion(state.Version),
 		"cipher="+tls.CipherSuiteName(state.CipherSuite),
 	)
@@ -177,6 +203,40 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 	}
 	result.Store(&result.TLS, common.OK(content))
 	return nil
+}
+
+// OID for embedded Signed Certificate Timestamps (RFC 6962).
+var oidEmbeddedSCT = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 11129, 2, 4, 2}
+
+func hasEmbeddedSCT(cert *x509.Certificate) bool {
+	for _, e := range cert.Extensions {
+		if e.Id.Equal(oidEmbeddedSCT) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildUDP53Query(name string) ([]byte, error) {
+	if name == "" {
+		name = "."
+	}
+	if name != "." && !strings.HasSuffix(name, ".") {
+		name += "."
+	}
+	n, err := dnsmessage.NewName(name)
+	if err != nil {
+		return nil, err
+	}
+	msg := dnsmessage.Message{
+		Header: dnsmessage.Header{ID: 0x4453, RecursionDesired: true},
+		Questions: []dnsmessage.Question{{
+			Name:  n,
+			Type:  dnsmessage.TypeNS,
+			Class: dnsmessage.ClassINET,
+		}},
+	}
+	return msg.Pack()
 }
 
 func tlsVersion(v uint16) string {

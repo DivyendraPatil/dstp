@@ -16,6 +16,7 @@
 .Op Fl -doh
 .Op Fl -insecure
 .Op Fl -extra
+.Op Fl -profile Ar web|mail|dns|api|full
 .Op Fl -skip Ar list
 .Op Fl -config Ar path
 .Op Fl q
@@ -24,11 +25,18 @@
 .Ar target
 .Sh DESCRIPTION
 .Nm
-probes a hostname, IP, or URL with parallel checks:
-ping, DNS, records, TCP, UDP, TLS, HTTP, and HTTPS.
+probes a hostname, IP, or URL with parallel checks.
+The default
+.Fl -profile Ar web
+focuses on site/CDN reachability and skips UDP :53, mail auth, and DNSSEC
+(use
+.Fl -profile Ar full
+for every check).
+TLS warns when a certificate expires within 30 days.
 Optional
 .Fl -extra
 adds traceroute, whois, and MTU probes when those tools are installed.
+UDP port 53 (dns/full profiles) is retargeted to a nameserver when the host is a web/CDN name.
 .Pp
 A full URL such as
 .Ql https://host:8443/health?q=1

@@ -39,7 +39,7 @@ vuln:
 
 release-check:
 	go run github.com/goreleaser/goreleaser/v2@latest check
-	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish
+	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign,sbom
 
 vet:
 	go vet ./...

@@ -49,6 +49,7 @@ type Config struct {
 	HTTPPort        string   `yaml:"http_port"`
 	Insecure        bool     `yaml:"insecure"`
 	Extra           bool     `yaml:"extra"`
+	Profile         string   `yaml:"profile"` // web|mail|dns|api|full (default web)
 	ConfigPath      string   `yaml:"-"`
 	ExplicitConfig  bool     `yaml:"-"`
 }
@@ -72,11 +73,19 @@ Options:
 	--follow-redirects     Follow HTTP(S) redirects
 	--insecure             Skip TLS certificate verification (security risk)
 	--extra                Also run traceroute, whois, and MTU probes
-	--skip         <list>    Skip: ping,dns,configured_dns,records,tcp,udp,tls,http,https,traceroute,whois,mtu
+	--profile      <name>  Preset: web (default), mail, dns, api, full
+	--skip         <list>  Extra checks to skip (merged with profile)
 	--config       <path>    Config file                                       [Default: $XDG config/dstp/config.yaml]
 	-q, --quiet            Suppress progress on stderr
 	-v, --version          Print version and exit
 	-h, --help             Show help and exit.
+
+Profiles:
+	web   site/CDN checks; skips udp, mail, dnssec (fixes :53 noise)
+	mail  SPF/DMARC/DKIM/BIMI + records/dnssec
+	dns   resolvers, records, DNSSEC, smarter UDP→NS
+	api   TCP/TLS/HTTPS/HTTP3/CDN (no cleartext HTTP)
+	full  every check
 `
 
 func PrintUsage(w io.Writer) {
@@ -136,6 +145,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 		HTTPMethod: "GET",
 		UDPPort:    "53",
 		HTTPPort:   "80",
+		Profile:    ProfileWeb,
 	}
 
 	cfgPath, explicit := findConfigFlag(args)
@@ -174,6 +184,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
 	fs.BoolVar(&opts.Insecure, "insecure", opts.Insecure, "Skip TLS verification")
 	fs.BoolVar(&opts.Extra, "extra", opts.Extra, "Enable traceroute/whois/mtu")
+	fs.StringVar(&opts.Profile, "profile", opts.Profile, "Check profile: web, mail, dns, api, full")
 	fs.StringVar(&skip, "skip", "", "Comma-separated checks to skip")
 	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "Path to config YAML")
 	fs.BoolVarP(&opts.Quiet, "quiet", "q", opts.Quiet, "Suppress progress")
@@ -211,6 +222,13 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 		opts.Skip = yamlSkip
 	}
 
+	prof := NormalizeProfile(opts.Profile)
+	if prof == "" {
+		return nil, fmt.Errorf("%w: unknown --profile %q (use web, mail, dns, api, full)", ErrUsage, opts.Profile)
+	}
+	opts.Profile = prof
+	opts.Skip = mergeSkipUnique(ProfileSkipList(opts.Profile), opts.Skip)
+
 	if opts.PingCount <= 0 {
 		return nil, fmt.Errorf("%w: ping count (-p) must be positive", ErrUsage)
 	}
@@ -232,7 +250,8 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 
 	known := map[string]struct{}{
 		"ping": {}, "dns": {}, "configured_dns": {}, "system_dns": {}, "records": {},
-		"tcp": {}, "udp": {}, "tls": {}, "http": {}, "https": {},
+		"mail": {}, "dnssec": {},
+		"tcp": {}, "udp": {}, "tls": {}, "http": {}, "https": {}, "http3": {}, "cdn": {},
 		"traceroute": {}, "whois": {}, "mtu": {},
 	}
 	for _, s := range opts.Skip {

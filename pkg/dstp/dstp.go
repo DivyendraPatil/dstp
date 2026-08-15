@@ -112,6 +112,20 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, lookup.DoHFormat(cfg.DoHFormat), timeout, result)
 			progress.done(string(CheckRecords), getByID(result, CheckRecords))
 		}},
+		{lookupMetaMust(CheckMail), func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			progress.start(string(CheckMail))
+			_ = lookup.MailAuth(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
+			progress.done(string(CheckMail), getByID(result, CheckMail))
+		}},
+		{lookupMetaMust(CheckDNSSEC), func() {
+			jctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			progress.start(string(CheckDNSSEC))
+			_ = lookup.DNSSEC(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
+			progress.done(string(CheckDNSSEC), getByID(result, CheckDNSSEC))
+		}},
 		{lookupMetaMust(CheckTCP), func() {
 			progress.start(string(CheckTCP))
 			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, result)
@@ -119,7 +133,7 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 		}},
 		{lookupMetaMust(CheckUDP), func() {
 			progress.start(string(CheckUDP))
-			_ = testUDP(ctx, common.Address(addr), udpPort, timeout, result)
+			_ = testUDPSmart(ctx, common.Address(addr), udpPort, cfg.CustomDnsServer, timeout, result)
 			progress.done(string(CheckUDP), getByID(result, CheckUDP))
 		}},
 		{lookupMetaMust(CheckTLS), func() {
@@ -136,6 +150,16 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 			progress.start(string(CheckHTTPS))
 			_ = testHTTPS(ctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, result)
 			progress.done(string(CheckHTTPS), getByID(result, CheckHTTPS))
+		}},
+		{lookupMetaMust(CheckHTTP3), func() {
+			progress.start(string(CheckHTTP3))
+			_ = testHTTP3(ctx, target, port, timeout, cfg.HTTPMethod, cfg.Insecure, result)
+			progress.done(string(CheckHTTP3), getByID(result, CheckHTTP3))
+		}},
+		{lookupMetaMust(CheckCDN), func() {
+			progress.start(string(CheckCDN))
+			_ = testCDN(ctx, target, port, timeout, cfg.Insecure, result)
+			progress.done(string(CheckCDN), getByID(result, CheckCDN))
 		}},
 		{lookupMetaMust(CheckTraceroute), func() {
 			progress.start(string(CheckTraceroute))

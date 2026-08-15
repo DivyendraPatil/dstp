@@ -55,3 +55,23 @@ func TestResultFailed(t *testing.T) {
 		t.Fatal("skipped should not fail")
 	}
 }
+
+func TestSkippedOmittedFromPlaintext(t *testing.T) {
+	SetNoColor(true)
+	r := &Result{
+		Ping: Skipped(),
+		TLS:  OK("valid until 2099-01-01"),
+		UDP:  NotApplicable("n/a: cdn"),
+	}
+	out := r.Output("plaintext")
+	if strings.Contains(out, "Ping:") || strings.Contains(out, "UDP:") {
+		t.Fatalf("skipped should be omitted:\n%s", out)
+	}
+	if !strings.Contains(out, "TLS:") {
+		t.Fatalf("expected TLS:\n%s", out)
+	}
+	js := r.Output("json")
+	if !strings.Contains(js, `"ping"`) || !strings.Contains(js, "skipped") {
+		t.Fatalf("json should keep skipped: %s", js)
+	}
+}

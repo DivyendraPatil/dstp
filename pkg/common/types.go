@@ -66,17 +66,26 @@ func Skipped() ResultPart {
 	return ResultPart{Content: "skipped", Status: StatusSkipped}
 }
 
+// NotApplicable marks a check as skipped with an explanatory message (e.g. UDP on a CDN edge).
+func NotApplicable(msg string) ResultPart {
+	return ResultPart{Content: msg, Status: StatusSkipped}
+}
+
 // Result aggregates all connectivity checks. Field order here drives plaintext output order.
 type Result struct {
 	Ping       ResultPart `json:"ping"`
 	DNS        ResultPart `json:"dns"`
 	SystemDNS  ResultPart `json:"configured_dns"`
 	Records    ResultPart `json:"records"`
+	Mail       ResultPart `json:"mail"`
+	DNSSEC     ResultPart `json:"dnssec"`
 	TCP        ResultPart `json:"tcp"`
 	UDP        ResultPart `json:"udp"`
 	TLS        ResultPart `json:"tls"`
 	HTTP       ResultPart `json:"http"`
 	HTTPS      ResultPart `json:"https"`
+	HTTP3      ResultPart `json:"http3"`
+	CDN        ResultPart `json:"cdn"`
 	Traceroute ResultPart `json:"traceroute"`
 	Whois      ResultPart `json:"whois"`
 	MTU        ResultPart `json:"mtu"`
@@ -110,11 +119,15 @@ func (r *Result) parts() []namedPart {
 		{"DNS", "dns", r.DNS},
 		{"ConfiguredDNS", "configured_dns", r.SystemDNS},
 		{"Records", "records", r.Records},
+		{"Mail", "mail", r.Mail},
+		{"DNSSEC", "dnssec", r.DNSSEC},
 		{"TCP", "tcp", r.TCP},
 		{"UDP", "udp", r.UDP},
 		{"TLS", "tls", r.TLS},
 		{"HTTP", "http", r.HTTP},
 		{"HTTPS", "https", r.HTTPS},
+		{"HTTP3", "http3", r.HTTP3},
+		{"CDN", "cdn", r.CDN},
 		{"Traceroute", "traceroute", r.Traceroute},
 		{"Whois", "whois", r.Whois},
 		{"MTU", "mtu", r.MTU},
@@ -143,7 +156,8 @@ func (r *Result) plaintextOutput() string {
 		case p.part.Status == StatusInconclusive:
 			output += fmt.Sprintf("%s: %s\n", White(p.name), Cyan(msg))
 		case p.part.Status == StatusSkipped:
-			output += fmt.Sprintf("%s: %s\n", White(p.name), msg)
+			// Omit skipped/n/a from plaintext to keep profile output tight (still in JSON).
+			continue
 		default:
 			output += fmt.Sprintf("%s: %s\n", White(p.name), Green(msg))
 		}

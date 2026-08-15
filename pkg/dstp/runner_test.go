@@ -26,7 +26,7 @@ func TestRunnerWithFakePing(t *testing.T) {
 		Quiet:     true,
 		Timeout:   2,
 		PingCount: 1,
-		Skip:      []string{"dns", "configured_dns", "records", "tcp", "udp", "tls", "http", "https"},
+		Skip:      []string{"dns", "configured_dns", "records", "mail", "dnssec", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
 	}
 	result, err := rn.Run(context.Background(), cfg)
 	if err != nil {

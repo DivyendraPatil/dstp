@@ -27,7 +27,7 @@ func TestRunAllTestsSkipAll(t *testing.T) {
 		Quiet:     true,
 		Timeout:   1,
 		PingCount: 1,
-		Skip:      []string{"ping", "dns", "configured_dns", "records", "tcp", "udp", "tls", "http", "https"},
+		Skip:      []string{"ping", "dns", "configured_dns", "records", "mail", "dnssec", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
 	})
 	if err != nil {
 		t.Fatal(err)

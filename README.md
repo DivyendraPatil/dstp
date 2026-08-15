@@ -45,22 +45,36 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | `--doh-bootstrap` | Dial this IP for DoH while keeping TLS server name (bootstrap without system DNS) |
 | `--method HEAD` | HTTP(S) method |
 | `--follow-redirects` | Follow redirects |
+| `--profile` | Preset: **`web`** (default), `mail`, `dns`, `api`, `full` |
 | `--insecure` | Skip TLS verify only when set (security risk) |
 | `--extra` | traceroute, whois, MTU (requires local tools) |
-| `--skip ping,http` | Skip named checks; `--skip=` clears YAML skips |
+| `--skip ping,http` | Extra skips merged with the profile; `--skip=` clears YAML skips |
 | `--config PATH` | YAML defaults (`os.UserConfigDir()/dstp/config.yaml`) |
 | `-q` | Quiet (no progress) |
 | `-v` / `-h` | Version / help (processed before config load) |
 
-Check IDs: `ping`, `dns`, `configured_dns`, `records`, `tcp`, `udp`, `tls`, `http`, `https`, `traceroute`, `whois`, `mtu`.
+Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`.
 
-Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`.
+Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`. Skipped checks are omitted from plaintext (still present in JSON).
+
+**Profiles**
+
+| Profile | Focus | Skips |
+|---------|--------|--------|
+| `web` (default) | Site/CDN: DNS, TCP, TLS, HTTP(S), HTTP/3, CDN | `udp`, `mail`, `dnssec` |
+| `mail` | SPF / DMARC / DKIM (+ BIMI if present), records, DNSSEC | HTTP stack, ping, TCP/UDP/TLS |
+| `dns` | Resolvers, records, DNSSEC, smarter UDP→NS | HTTP stack, mail, ping, TCP/TLS |
+| `api` | TCP, TLS, HTTPS, HTTP/3, CDN, DNS | `udp`, `mail`, `dnssec`, cleartext `http`, `ping` |
+| `full` | Everything | — |
+
+Default UDP `:53` (in `dns`/`full`) retargets to an NS host when the address is a web/CDN name. TLS warns when the cert expires in ≤30 days and reports chain length, OCSP stapling, and CT/SCT hints.
 
 ```bash
 dstp example.com -o json
 dstp https://example.com:8443/health?q=1
 dstp staging --config ./prod.yaml   # probes staging, not YAML addr
-dstp example.com --extra -q
+dstp example.com --profile mail     # SPF/DMARC focus
+dstp example.com --profile full -q
 dstp 1.1.1.1 --insecure --skip http,https
 ```
 
@@ -70,6 +84,7 @@ Default path: `$XDG_CONFIG_HOME/dstp/config.yaml` (or platform `UserConfigDir`).
 
 ```yaml
 out: plaintext
+profile: web
 timeout: 5
 ping_count: 3
 dns: 1.1.1.1
@@ -79,7 +94,7 @@ method: GET
 follow_redirects: false
 insecure: false
 extra: false
-skip: [ping]
+skip: []
 quiet: true
 port: "443"
 tcp_port: "443"

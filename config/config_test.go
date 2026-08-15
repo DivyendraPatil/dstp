@@ -83,7 +83,7 @@ func TestSkipEmptyClearsYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	opts, err := ConfigureOptions(fs, []string{"--config", path, "--skip=", "example.com"})
+	opts, err := ConfigureOptions(fs, []string{"--config", path, "--profile", "full", "--skip=", "example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}

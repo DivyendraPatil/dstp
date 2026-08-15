@@ -19,7 +19,7 @@ func TestIntegrationSkipAll(t *testing.T) {
 		Quiet:     true,
 		Timeout:   2,
 		PingCount: 1,
-		Skip:      []string{"ping", "dns", "configured_dns", "records", "tcp", "udp", "tls", "http", "https"},
+		Skip:      []string{"ping", "dns", "configured_dns", "records", "mail", "dnssec", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestRunAllTestsLocalHTTP(t *testing.T) {
 		Timeout:   3,
 		PingCount: 1,
 		HTTPPort:  port,
-		Skip:      []string{"ping", "dns", "configured_dns", "records", "udp", "tls", "https", "tcp"},
+		Skip:      []string{"ping", "dns", "configured_dns", "records", "mail", "dnssec", "udp", "tls", "https", "tcp", "http3", "cdn"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestRunAllTestsLocalTCP(t *testing.T) {
 		Timeout:   3,
 		PingCount: 1,
 		TCPPort:   port,
-		Skip:      []string{"ping", "dns", "configured_dns", "records", "udp", "tls", "http", "https"},
+		Skip:      []string{"ping", "dns", "configured_dns", "records", "mail", "dnssec", "udp", "tls", "http", "https", "http3", "cdn"},
 	})
 	if err != nil {
 		t.Fatal(err)

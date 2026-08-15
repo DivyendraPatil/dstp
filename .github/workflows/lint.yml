@@ -45,4 +45,5 @@ jobs:
       - name: GoReleaser check + snapshot
         run: |
           go run github.com/goreleaser/goreleaser/v2@latest check
-          go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign
+          # Skip SBOM (needs syft), sign (needs OIDC+cosign), and publish on CI smoke builds.
+          go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign,sbom
