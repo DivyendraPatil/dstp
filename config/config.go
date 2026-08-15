@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,7 @@ type Config struct {
 	FollowRedirects bool     `yaml:"follow_redirects"`
 	DoH             bool     `yaml:"doh"`
 	DoHURL          string   `yaml:"doh_url"`
+	DoHBootstrap    string   `yaml:"doh_bootstrap"` // optional IP to dial while keeping TLS SNI
 	TCPPort         string   `yaml:"tcp_port"`
 	UDPPort         string   `yaml:"udp_port"`
 	HTTPPort        string   `yaml:"http_port"`
@@ -63,6 +65,7 @@ Options:
 	--dns          <string>  Custom DNS for ConfiguredDNS check
 	--doh                  Use DNS-over-HTTPS for DNS check
 	--doh-url      <string>  DoH JSON endpoint (provider-specific dns-json)
+	--doh-bootstrap <ip>   Dial this IP for DoH while keeping TLS server name
 	--method       <string>  HTTP(S) method: GET or HEAD                       [Default: GET]
 	--follow-redirects     Follow HTTP(S) redirects
 	--insecure             Skip TLS certificate verification (security risk)
@@ -162,6 +165,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	fs.StringVar(&opts.CustomDnsServer, "dns", opts.CustomDnsServer, "Custom DNS server")
 	fs.BoolVar(&opts.DoH, "doh", opts.DoH, "Use DNS-over-HTTPS")
 	fs.StringVar(&opts.DoHURL, "doh-url", opts.DoHURL, "DoH endpoint URL")
+	fs.StringVar(&opts.DoHBootstrap, "doh-bootstrap", opts.DoHBootstrap, "DoH dial IP (keep TLS SNI)")
 	fs.StringVar(&opts.HTTPMethod, "method", opts.HTTPMethod, "HTTP(S) method")
 	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
 	fs.BoolVar(&opts.Insecure, "insecure", opts.Insecure, "Skip TLS verification")
@@ -237,6 +241,11 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 		low := strings.ToLower(opts.DoHURL)
 		if !strings.HasPrefix(low, "https://") && !strings.HasPrefix(low, "http://127.0.0.1") && !strings.HasPrefix(low, "http://localhost") {
 			return nil, fmt.Errorf("%w: --doh-url must be https", ErrUsage)
+		}
+	}
+	if opts.DoHBootstrap != "" {
+		if net.ParseIP(opts.DoHBootstrap) == nil {
+			return nil, fmt.Errorf("%w: --doh-bootstrap must be an IP address", ErrUsage)
 		}
 	}
 

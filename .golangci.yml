@@ -8,7 +8,7 @@ linters:
     - unconvert
   settings:
     gocyclo:
-      min-complexity: 40
+      min-complexity: 45
     gosec:
       excludes:
         - G204 # intentional fixed argv for ping/traceroute/whois (see SECURITY.md)

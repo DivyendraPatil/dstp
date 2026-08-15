@@ -24,10 +24,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Install Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           go-version-file: go.mod
 
@@ -38,6 +38,15 @@ jobs:
       - name: Unit tests
         shell: bash
         run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage floor
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/{print substr($3,1,length($3)-1)}')
+          echo "total coverage: ${total}%"
+          # Ratchet: fail if overall coverage drops below this floor.
+          awk -v t="$total" 'BEGIN{ if ((t+0) < 45.0) { print "coverage " t "% below floor 45%"; exit 1 } }'
 
       - name: Race tests
         if: runner.os == 'Linux'
@@ -53,7 +62,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
         with:
           files: coverage.out
           fail_ci_if_error: false
@@ -63,10 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           go-version-file: go.mod
       - name: Snapshot

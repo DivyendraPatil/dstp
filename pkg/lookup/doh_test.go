@@ -33,7 +33,7 @@ func TestLookupDoH(t *testing.T) {
 	defer ts.Close()
 
 	var result common.Result
-	err := Default(context.Background(), common.Address("example.com"), 2*time.Second, true, ts.URL, &result)
+	err := Default(context.Background(), common.Address("example.com"), 2*time.Second, true, ts.URL, "", &result)
 	if err != nil {
 		t.Fatal(err)
 	}

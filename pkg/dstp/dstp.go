@@ -1,10 +1,12 @@
-// Package dstp runs parallel connectivity checks against a host or IP.
 package dstp
 
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/DivyendraPatil/dstp/config"
 	"github.com/DivyendraPatil/dstp/pkg/common"
@@ -15,13 +17,27 @@ import (
 // ErrChecksFailed is returned when one or more connectivity checks failed.
 var ErrChecksFailed = errors.New("one or more checks failed")
 
-// RunAllTests executes selected checks against the given domain or IP.
-func RunAllTests(ctx context.Context, cfg config.Config) error {
-	common.InitColor()
+// Runner executes checks and optionally renders output.
+type Runner struct {
+	Stdout io.Writer
+	Stderr io.Writer
+	// PingFunc overrides the default ping implementation (tests).
+	PingFunc func(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error
+}
+
+// DefaultRunner writes to stdout/stderr.
+func DefaultRunner() *Runner {
+	return &Runner{Stdout: os.Stdout, Stderr: os.Stderr}
+}
+
+// Run executes selected checks and returns the aggregated result.
+// It does not write output; call Render separately or use RunAllTests.
+func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, error) {
+	result := &common.Result{}
 
 	target, err := parseTarget(cfg.Addr)
 	if err != nil {
-		return err
+		return result, err
 	}
 	addr := target.Host
 
@@ -51,99 +67,104 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
-	var result common.Result
 	progress := newProgress(!cfg.Quiet && cfg.Output != "json")
+	if rn.Stderr != nil {
+		progress.w = rn.Stderr
+	}
+
+	skipConfiguredDup := cfg.CustomDnsServer == "" && !cfg.DoH
+	pingFn := rn.PingFunc
+	if pingFn == nil {
+		pingFn = ping.RunTest
+	}
 
 	type job struct {
-		name string
+		meta CheckMeta
 		run  func()
 	}
 
-	// When neither --dns nor --doh is set, ConfiguredDNS duplicates system DNS — skip it.
-	skipConfiguredDup := cfg.CustomDnsServer == "" && !cfg.DoH
-
 	jobs := []job{
-		{"ping", func() {
+		{lookupMetaMust(CheckPing), func() {
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			progress.start("ping")
-			_ = ping.RunTest(jctx, common.Address(addr), cfg.PingCount, timeout, &result)
-			progress.done("ping", snapshot(&result, "ping"))
+			progress.start(string(CheckPing))
+			_ = pingFn(jctx, common.Address(addr), cfg.PingCount, timeout, result)
+			progress.done(string(CheckPing), getByID(result, CheckPing))
 		}},
-		{"dns", func() {
+		{lookupMetaMust(CheckDNS), func() {
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			progress.start("dns")
-			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, &result)
-			progress.done("dns", snapshot(&result, "dns"))
+			progress.start(string(CheckDNS))
+			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, cfg.DoHBootstrap, result)
+			progress.done(string(CheckDNS), getByID(result, CheckDNS))
 		}},
-		{"configured_dns", func() {
+		{lookupMetaMust(CheckConfiguredDNS), func() {
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			progress.start("configured_dns")
-			_ = lookup.Host(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, &result)
-			progress.done("configured_dns", snapshot(&result, "configured_dns"))
+			progress.start(string(CheckConfiguredDNS))
+			_ = lookup.Host(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
+			progress.done(string(CheckConfiguredDNS), getByID(result, CheckConfiguredDNS))
 		}},
-		{"records", func() {
+		{lookupMetaMust(CheckRecords), func() {
 			jctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			progress.start("records")
-			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, timeout, &result)
-			progress.done("records", snapshot(&result, "records"))
+			progress.start(string(CheckRecords))
+			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, timeout, result)
+			progress.done(string(CheckRecords), getByID(result, CheckRecords))
 		}},
-		{"tcp", func() {
-			progress.start("tcp")
-			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, &result)
-			progress.done("tcp", snapshot(&result, "tcp"))
+		{lookupMetaMust(CheckTCP), func() {
+			progress.start(string(CheckTCP))
+			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, result)
+			progress.done(string(CheckTCP), getByID(result, CheckTCP))
 		}},
-		{"udp", func() {
-			progress.start("udp")
-			_ = testUDP(ctx, common.Address(addr), udpPort, timeout, &result)
-			progress.done("udp", snapshot(&result, "udp"))
+		{lookupMetaMust(CheckUDP), func() {
+			progress.start(string(CheckUDP))
+			_ = testUDP(ctx, common.Address(addr), udpPort, timeout, result)
+			progress.done(string(CheckUDP), getByID(result, CheckUDP))
 		}},
-		{"tls", func() {
-			progress.start("tls")
-			_ = testTLS(ctx, common.Address(addr), port, timeout, cfg.Insecure, &result)
-			progress.done("tls", snapshot(&result, "tls"))
+		{lookupMetaMust(CheckTLS), func() {
+			progress.start(string(CheckTLS))
+			_ = testTLS(ctx, common.Address(addr), port, timeout, cfg.Insecure, result)
+			progress.done(string(CheckTLS), getByID(result, CheckTLS))
 		}},
-		{"http", func() {
-			progress.start("http")
-			_ = testHTTP(ctx, target, httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, &result)
-			progress.done("http", snapshot(&result, "http"))
+		{lookupMetaMust(CheckHTTP), func() {
+			progress.start(string(CheckHTTP))
+			_ = testHTTP(ctx, target, httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, result)
+			progress.done(string(CheckHTTP), getByID(result, CheckHTTP))
 		}},
-		{"https", func() {
-			progress.start("https")
-			_ = testHTTPS(ctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, &result)
-			progress.done("https", snapshot(&result, "https"))
+		{lookupMetaMust(CheckHTTPS), func() {
+			progress.start(string(CheckHTTPS))
+			_ = testHTTPS(ctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, result)
+			progress.done(string(CheckHTTPS), getByID(result, CheckHTTPS))
 		}},
-		{"traceroute", func() {
-			progress.start("traceroute")
-			_ = testTraceroute(ctx, common.Address(addr), timeout, &result)
-			progress.done("traceroute", snapshot(&result, "traceroute"))
+		{lookupMetaMust(CheckTraceroute), func() {
+			progress.start(string(CheckTraceroute))
+			_ = testTraceroute(ctx, common.Address(addr), timeout, result)
+			progress.done(string(CheckTraceroute), getByID(result, CheckTraceroute))
 		}},
-		{"whois", func() {
-			progress.start("whois")
-			_ = testWhois(ctx, common.Address(addr), timeout, &result)
-			progress.done("whois", snapshot(&result, "whois"))
+		{lookupMetaMust(CheckWhois), func() {
+			progress.start(string(CheckWhois))
+			_ = testWhois(ctx, common.Address(addr), timeout, result)
+			progress.done(string(CheckWhois), getByID(result, CheckWhois))
 		}},
-		{"mtu", func() {
-			progress.start("mtu")
-			_ = testMTU(ctx, common.Address(addr), timeout, &result)
-			progress.done("mtu", snapshot(&result, "mtu"))
+		{lookupMetaMust(CheckMTU), func() {
+			progress.start(string(CheckMTU))
+			_ = testMTU(ctx, common.Address(addr), timeout, result)
+			progress.done(string(CheckMTU), getByID(result, CheckMTU))
 		}},
 	}
 
 	var wg sync.WaitGroup
 	for _, j := range jobs {
 		j := j
-		if isExtraCheck(j.name) && !cfg.Extra {
+		if j.meta.Extra && !cfg.Extra {
 			continue
 		}
-		if j.name == "configured_dns" && skipConfiguredDup {
-			continue // omit duplicate of system DNS when no --dns/--doh
+		if j.meta.ID == CheckConfiguredDNS && skipConfiguredDup {
+			continue
 		}
-		if shouldSkip(cfg, j.name) {
-			setSkipped(&result, j.name)
+		if shouldSkip(cfg, string(j.meta.ID)) {
+			setByID(result, j.meta.ID, common.Skipped())
 			continue
 		}
 		wg.Add(1)
@@ -154,97 +175,71 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 	}
 	wg.Wait()
 
-	out := result.Output(cfg.Output)
-	if cfg.Output == "json" {
-		printWithColor(out + "\n")
-	} else {
-		printWithColor(out)
-	}
-
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return result, ctx.Err()
 	}
 	if result.Failed() {
-		return ErrChecksFailed
+		return result, ErrChecksFailed
 	}
-	return nil
+	return result, nil
+}
+
+// Render writes the result to Stdout using cfg.Output.
+func (rn *Runner) Render(cfg config.Config, result *common.Result) {
+	if result == nil {
+		return
+	}
+	out := result.Output(cfg.Output)
+	w := rn.Stdout
+	if w == nil {
+		if cfg.Output == "json" {
+			printWithColor(out + "\n")
+		} else {
+			printWithColor(out)
+		}
+		return
+	}
+	if cfg.Output == "json" {
+		_, _ = io.WriteString(w, out+"\n")
+	} else {
+		_, _ = io.WriteString(w, out)
+	}
+}
+
+// RunAllTests executes selected checks and prints output (CLI compatibility).
+func RunAllTests(ctx context.Context, cfg config.Config) error {
+	common.InitColor()
+	rn := DefaultRunner()
+	result, err := rn.Run(ctx, cfg)
+	rn.Render(cfg, result)
+	return err
+}
+
+func lookupMetaMust(id CheckID) CheckMeta {
+	m, ok := lookupMeta(string(id))
+	if !ok {
+		return CheckMeta{ID: id, Label: string(id), JSONKey: string(id)}
+	}
+	return m
 }
 
 func shouldSkip(cfg config.Config, name string) bool {
 	if cfg.ShouldSkip(name) {
 		return true
 	}
-	return name == "configured_dns" && cfg.ShouldSkip("system_dns")
+	m, ok := lookupMeta(name)
+	if !ok {
+		return false
+	}
+	for _, a := range m.Aliases {
+		if cfg.ShouldSkip(a) {
+			return true
+		}
+	}
+	return false
 }
 
 func isExtraCheck(name string) bool {
-	switch name {
-	case "traceroute", "whois", "mtu":
-		return true
-	default:
-		return false
-	}
-}
-
-func snapshot(result *common.Result, name string) common.ResultPart {
-	result.Mu.Lock()
-	defer result.Mu.Unlock()
-	switch name {
-	case "ping":
-		return result.Ping
-	case "dns":
-		return result.DNS
-	case "configured_dns":
-		return result.SystemDNS
-	case "records":
-		return result.Records
-	case "tcp":
-		return result.TCP
-	case "udp":
-		return result.UDP
-	case "tls":
-		return result.TLS
-	case "http":
-		return result.HTTP
-	case "https":
-		return result.HTTPS
-	case "traceroute":
-		return result.Traceroute
-	case "whois":
-		return result.Whois
-	case "mtu":
-		return result.MTU
-	default:
-		return common.ResultPart{}
-	}
-}
-
-func setSkipped(result *common.Result, name string) {
-	s := common.Skipped()
-	switch name {
-	case "ping":
-		result.Store(&result.Ping, s)
-	case "dns":
-		result.Store(&result.DNS, s)
-	case "configured_dns":
-		result.Store(&result.SystemDNS, s)
-	case "records":
-		result.Store(&result.Records, s)
-	case "tcp":
-		result.Store(&result.TCP, s)
-	case "udp":
-		result.Store(&result.UDP, s)
-	case "tls":
-		result.Store(&result.TLS, s)
-	case "http":
-		result.Store(&result.HTTP, s)
-	case "https":
-		result.Store(&result.HTTPS, s)
-	case "traceroute":
-		result.Store(&result.Traceroute, s)
-	case "whois":
-		result.Store(&result.Whois, s)
-	case "mtu":
-		result.Store(&result.MTU, s)
-	}
+	m, ok := lookupMeta(name)
+	return ok && m.Extra
 }

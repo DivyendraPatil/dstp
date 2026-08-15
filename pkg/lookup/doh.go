@@ -2,6 +2,7 @@ package lookup
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,8 @@ type dohResponse struct {
 
 // lookupDoH queries a provider JSON DoH endpoint (application/dns-json) for A and AAAA.
 // This is not RFC 8484 dns-message; the CLI documents it as provider-specific JSON DoH.
-func lookupDoH(ctx context.Context, endpoint, host string, timeout time.Duration) ([]string, error) {
+// If bootstrapIP is set, connections dial that IP while TLS uses the URL hostname as ServerName.
+func lookupDoH(ctx context.Context, endpoint, host, bootstrapIP string, timeout time.Duration) ([]string, error) {
 	if endpoint == "" {
 		endpoint = "https://cloudflare-dns.com/dns-query"
 	}
@@ -32,8 +34,8 @@ func lookupDoH(ctx context.Context, endpoint, host string, timeout time.Duration
 		return nil, fmt.Errorf("DoH URL: %w", err)
 	}
 	if u.Scheme != "https" {
-		host := u.Hostname()
-		if u.Scheme != "http" || (host != "127.0.0.1" && host != "localhost" && host != "::1") {
+		h := u.Hostname()
+		if u.Scheme != "http" || (h != "127.0.0.1" && h != "localhost" && h != "::1") {
 			return nil, fmt.Errorf("DoH URL must use https")
 		}
 	}
@@ -46,6 +48,32 @@ func lookupDoH(ctx context.Context, endpoint, host string, timeout time.Duration
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 2
+	if bootstrapIP != "" {
+		if net.ParseIP(bootstrapIP) == nil {
+			return nil, fmt.Errorf("DoH bootstrap must be an IP")
+		}
+		port := u.Port()
+		if port == "" {
+			if u.Scheme == "http" {
+				port = "80"
+			} else {
+				port = "443"
+			}
+		}
+		dialAddr := net.JoinHostPort(bootstrapIP, port)
+		serverName := u.Hostname()
+		transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{}
+			return d.DialContext(ctx, network, dialAddr)
+		}
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		} else {
+			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+		}
+		transport.TLSClientConfig.ServerName = serverName
+	}
+
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,

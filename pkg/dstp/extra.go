@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -52,17 +54,16 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 	defer cancel()
 
 	if _, err := exec.LookPath("whois"); err != nil {
-		msg := "whois not installed; install whois or use an RDAP client"
-		if runtime.GOOS == "windows" {
-			msg = "whois not available on this Windows host"
-		}
-		result.Store(&result.Whois, common.Fail(fmt.Errorf("%s", msg)))
-		return fmt.Errorf("%s", msg)
+		return testRDAP(ctx, address, result)
 	}
 
 	out, err := runCmd(ctx, "whois", address.String())
 	if err != nil {
 		if out == "" {
+			// Fall back to RDAP when whois fails hard.
+			if rerr := testRDAP(ctx, address, result); rerr == nil {
+				return nil
+			}
 			result.Store(&result.Whois, common.Fail(err))
 			return err
 		}
@@ -87,11 +88,66 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 		}
 	}
 	if len(parts) == 0 {
+		if rerr := testRDAP(ctx, address, result); rerr == nil {
+			return nil
+		}
 		err := fmt.Errorf("no whois data")
 		result.Store(&result.Whois, common.Fail(err))
 		return err
 	}
 	result.Store(&result.Whois, common.OK(strings.Join(parts, "; ")))
+	return nil
+}
+
+func testRDAP(ctx context.Context, address common.Address, result *common.Result) error {
+	host := address.String()
+	if net.ParseIP(host) != nil {
+		err := fmt.Errorf("whois/rdap: IP RDAP not implemented; install whois")
+		result.Store(&result.Whois, common.Fail(err))
+		return err
+	}
+	u := "https://rdap.org/domain/" + host
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		result.Store(&result.Whois, common.Fail(err))
+		return err
+	}
+	req.Header.Set("Accept", "application/rdap+json, application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		result.Store(&result.Whois, common.Fail(fmt.Errorf("rdap: %w", err)))
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		result.Store(&result.Whois, common.Fail(err))
+		return err
+	}
+	if resp.StatusCode >= 400 {
+		err := fmt.Errorf("rdap HTTP %s", resp.Status)
+		result.Store(&result.Whois, common.Fail(err))
+		return err
+	}
+	// Prefer compact summary fields if present.
+	s := string(body)
+	var parts []string
+	for _, key := range []string{`"ldhName"`, `"handle"`, `"name"`} {
+		if i := strings.Index(s, key); i >= 0 {
+			frag := s[i:]
+			if j := strings.Index(frag, ","); j > 0 {
+				frag = frag[:j]
+			}
+			parts = append(parts, strings.TrimSpace(strings.Trim(frag, `{," `)))
+			if len(parts) >= 2 {
+				break
+			}
+		}
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "rdap ok ("+truncate(s, 80)+")")
+	}
+	result.Store(&result.Whois, common.OK("rdap: "+strings.Join(parts, "; ")))
 	return nil
 }
 

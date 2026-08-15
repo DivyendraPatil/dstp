@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,7 +19,7 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr *os.File) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
