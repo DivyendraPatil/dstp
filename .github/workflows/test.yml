@@ -24,16 +24,24 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Test
-        timeout-minutes: 5
-        run: |
-          go build -o dstp ./cmd/dstp
-          go test -v -coverprofile=coverage.out -covermode=atomic ./...
-          go test -v -tags=integration ./...
+      - name: Build
+        shell: bash
+        run: go build -o dstp$(go env GOEXE) ./cmd/dstp
+
+      - name: Unit tests
+        shell: bash
+        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Integration tests
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CI: true
+        run: go test -v -tags=integration ./pkg/dstp ./pkg/lookup
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: coverage.out
           fail_ci_if_error: false

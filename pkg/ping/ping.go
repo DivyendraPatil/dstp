@@ -135,8 +135,8 @@ type pingOutput struct {
 }
 
 var (
-	RequestTimeoutError = fmt.Errorf("requests timed out")
-	PacketLossError     = fmt.Errorf("timeout error: 100.0%% packet loss")
+	ErrRequestTimeout = fmt.Errorf("requests timed out")
+	ErrPacketLoss     = fmt.Errorf("timeout error: 100.0%% packet loss")
 )
 
 func parsePingOutput(out string) (pingOutput, error) {
@@ -169,10 +169,10 @@ func parsePingOutput(out string) (pingOutput, error) {
 	}
 
 	if po.MinRTT == "" && po.AvgRTT == "" && po.MaxRTT == "" {
-		return po, RequestTimeoutError
+		return po, ErrRequestTimeout
 	}
 	if strings.Contains(po.PacketLoss, "100") && strings.Contains(po.PacketLoss, "packet loss") {
-		return po, PacketLossError
+		return po, ErrPacketLoss
 	}
 	return po, nil
 }

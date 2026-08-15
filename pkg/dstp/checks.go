@@ -36,7 +36,7 @@ func testUDP(ctx context.Context, address common.Address, port string, timeout t
 		result.Store(&result.UDP, common.Fail(err))
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(minDuration(timeout, 2*time.Second)))
 
 	// Send a tiny probe; many UDP services won't reply — success is "socket usable".
@@ -90,7 +90,7 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 		result.Store(&result.TLS, common.Fail(err))
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
@@ -200,7 +200,7 @@ func testHTTPScheme(ctx context.Context, scheme string, address common.Address, 
 		result.Store(dst, common.Fail(err))
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 
 	parts := []string{

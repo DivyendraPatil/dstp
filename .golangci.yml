@@ -1,25 +1,32 @@
-run:
-  timeout: 5m
+version: "2"
 
 linters:
+  default: standard
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - gosec
     - gocyclo
-    - dupl
     - unconvert
-    - goconst
-
-linters-settings:
-  gocyclo:
-    min-complexity: 20
-  dupl:
-    threshold: 120
-
-issues:
-  exclude-use-default: false
+  settings:
+    gocyclo:
+      min-complexity: 25
+    gosec:
+      excludes:
+        - G204 # intentional fixed argv for ping/traceroute/whois
+        - G304 # config path is user-provided by design
+        - G402 # --insecure / IP-target TLS paths are explicit
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

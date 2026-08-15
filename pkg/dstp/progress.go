@@ -26,7 +26,7 @@ func (p *progressWriter) start(name string) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	fmt.Fprintf(p.w, "… %s\n", name)
+	_, _ = fmt.Fprintf(p.w, "… %s\n", name)
 }
 
 func (p *progressWriter) done(name string, part common.ResultPart) {
@@ -43,5 +43,5 @@ func (p *progressWriter) done(name string, part common.ResultPart) {
 			status = "ok"
 		}
 	}
-	fmt.Fprintf(p.w, "✓ %s (%s)\n", name, status)
+	_, _ = fmt.Fprintf(p.w, "✓ %s (%s)\n", name, status)
 }
