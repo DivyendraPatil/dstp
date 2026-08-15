@@ -4,16 +4,18 @@ package ping
 
 import (
 	"context"
-	"fmt"
-	"github.com/ycd/dstp/pkg/common"
 	"testing"
+	"time"
+
+	"github.com/ycd/dstp/pkg/common"
 )
 
 func TestPingFallback(t *testing.T) {
-	out, err := runPingFallback(context.Background(), common.Address("8.8.8.8"), 3)
+	out, err := runPingFallback(context.Background(), common.Address("8.8.8.8"), 2, 5*time.Second)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-
-	fmt.Println(out.String())
+	if out.Content == "" {
+		t.Fatal("empty ping fallback content")
+	}
 }

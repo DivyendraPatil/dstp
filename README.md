@@ -1,164 +1,93 @@
-<div align="center">
-<h1>dstp</h1>
+# dstp
 
-[dstp](https://github.com/ycd/dstp), run common networking tests against your site.
+Run common networking checks against a host — ping, DNS, TCP, TLS, and HTTPS — in one command.
 
-![dstp gif](assets/dstp.png)
-
-</div>
-
-
----
-
-## Usage
-
-```
-Usage: dstp [OPTIONS] [ARGS]
-Options:
-        -a, --addr   <string>  The URL or the IP address to run tests against      [REQUIRED]
-        -o, --out    <string>  The type of the output, either json or plaintext    [Default: plaintext] 
-        -p           <int>     Number of ping packets                              [Default: 3]
-        -t           <int>     Give up on ping after this many seconds             [Default: 2s per ping packet]
-        --port       <string>  Port for testing TLS and HTTPS connectivity         [Default: 443]
-        --dns        <string>  Custom DNS server for the configured DNS check      [Default: system resolver]
-        -h, --help             Show this message and exit.
+```bash
+dstp example.com
 ```
 
-## Motivation
+Example output:
 
-A comment on [lobste.rs](https://lobste.rs/s/qtsklv/how_do_you_tell_if_problem_is_caused_by_dns#c_1nqkdp), in a thread
-about DNS gave a great idea and thought a robust tool like that might come in handy!
+```text
+Ping: 12ms
+DNS: IPv4=93.184.216.34 IPv6=2606:2800:220:1:248:1893:25c8:1946
+ConfiguredDNS: IPv4=93.184.216.34 IPv6=2606:2800:220:1:248:1893:25c8:1946
+Records: A=…; AAAA=…; NS=…
+TCP: connected to example.com:443 in 40ms
+TLS: valid 73 days; issuer=…; proto=TLS1.3; cipher=…
+HTTPS: GET 200 OK; TTFB=90ms; proto=TLS1.3
+```
 
-## Installation
+Exit code is `1` if any check fails.
 
-### Packages
+## Install
 
-#### Homebrew
-
-```zsh
+```bash
 brew install dstp
-```
-
-#### Go Install
-
-```zsh
+# or
 go install github.com/ycd/dstp/cmd/dstp@latest
 ```
 
-#### NixOS/nix
+Requires **Go 1.26+** to build from source.
 
-You can install dstp using one of these methods:
+> This fork: [DivyendraPatil/dstp](https://github.com/DivyendraPatil/dstp). Module path stays `github.com/ycd/dstp` for `go install` compatibility.
 
-1. Using `nix-shell` or `nix shell` (recommended for trying it out):
-```bash
-nix shell nixpkgs#dstp
-```
+## Common options
 
-2. Adding to your NixOS configuration (system-wide installation):
-```nix
-# configuration.nix or home-manager configuration
-{
-  # ...
-  environment.systemPackages = with pkgs; [
-    dstp
-  ];
-}
-```
-
-3. Or using `nix profile` (for individual user installation):
-```bash
-nix profile install nixpkgs#dstp
-```
-
-#### Arch Linux
+| Flag | What it does |
+|------|----------------|
+| `-a, --addr` | Target host/URL/IP (or pass as the first argument) |
+| `-o json` | Machine-readable output with `status` / `content` / `error` |
+| `-t 5` | Per-check timeout in seconds |
+| `--dns 8.8.8.8` | Resolver for the **ConfiguredDNS** check |
+| `--doh` | Use DNS-over-HTTPS for the **DNS** check |
+| `--method HEAD` | HTTPS request method (`GET` or `HEAD`) |
+| `--follow-redirects` | Follow HTTPS redirects (off by default) |
+| `--skip ping,records` | Skip named checks |
+| `-q` | Quiet (no progress on stderr) |
 
 ```bash
-git clone https://aur.archlinux.org/dstp.git
+dstp example.com -o json
+dstp example.com --dns 1.1.1.1 --doh
+dstp example.com --method HEAD --follow-redirects
+dstp example.com --skip ping -q
+```
+
+## What each check means
+
+| Name | Meaning |
+|------|---------|
+| **Ping** | ICMP latency |
+| **DNS** | Default system resolver (or DoH with `--doh`) |
+| **ConfiguredDNS** | System resolver, or `--dns` if set |
+| **Records** | A / AAAA / CNAME / MX / NS / TXT |
+| **TCP** | Plain TCP connect (`--tcp-port`, default 443) |
+| **TLS** | Cert expiry, issuer, protocol, cipher, SANs |
+| **HTTPS** | Status, TTFB, redirects |
+
+## Build from source
+
+```bash
+git clone https://github.com/DivyendraPatil/dstp
 cd dstp
-makepkg -sri
+make
+./dstp example.com -q
 ```
 
-### Downloads
+## Also available via
 
-Binary downloads of example are available from [the releases section on GitHub](https://github.com/ycd/dstp/releases/)
-for 64-bit Windows, macOS, and Linux targets. They contain the compiled executable.
+- [Nix](https://search.nixos.org/packages?query=dstp): `nix shell nixpkgs#dstp`
+- [AUR](https://aur.archlinux.org/packages/dstp)
+- [GitHub Releases](https://github.com/ycd/dstp/releases) (upstream binaries)
 
-| platform     |
-| ----------- | 
-| [macOS ARM 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Darwin_arm64.tar.gz)
-| [macOS 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Darwin_amd64.tar.gz)
-| [Linux 32-Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Linux_386.tar.gz)
-| [Linux ARM 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Linux_arm64.tar.gz)
-| [Linux 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Linux_amd64.tar.gz)
-| [Windows 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Windows_amd64.zip)
-| [Windows 32 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Windows_386.zip)
-| [Windows ARM 64 Bit](https://github.com/ycd/dstp/releases/download/v0.4.23/dstp_0.4.23_Windows_arm64.zip)
+## Note for oh-my-zsh + Docker
 
-### Installation from source
-
-0. Verify that you have Go 1.25+ installed
-
-   ```
-   $ go version
-   ```
-
-   If `go` is not installed, follow instructions on [the Go website](https://golang.org/doc/install).
-
-1. Clone this repository
-
-   ```
-   $ git clone https://github.com/ycd/dstp 
-   $ cd dstp
-   ```
-
-2. Build and install
-
-   #### Unix/Linux
-   ```
-   # May require you to use sudo
-   $ go build cmd/dstp/dstp.go
-   $ cp dstp /usr/local/bin/dstp
-   ```
-
-   #### Mac/BSD
-   ```
-   # May require you to use sudo
-   $ make
-   $ cp dstp /usr/local/bin/dstp
-   ```
-
-3. Verify installation
-
-   ```
-   $ dstp -h 
-
-   Usage: dstp [OPTIONS] [ARGS]
-   Options:
-         -a, --addr   <string>  The URL or the IP address to run tests against      [REQUIRED]
-         -o, --out    <string>  The type of the output, either json or plaintext    [Default: plaintext]
-         -p           <int>     Number of ping packets                              [Default: 3]
-         -t           <int>     Give up on ping after this many seconds             [Default: 2s per ping packet]
-         --port       <string>  Port for testing TLS and HTTPS connectivity         [Default: 443]
-         --dns        <string>  Custom DNS server for the configured DNS check      [Default: system resolver]
-         -h, --help             Show this message and exit.
-   ```
-
----
-
-## Appendix
-
-The command `dstp` may collide with `docker stop`command if you are using the docker plugin with oh-my-zsh. 
-
-To fix this, you can add the following command at the end of your `.zshrc` file:
+`dstp` may collide with the Docker plugin alias for `docker stop`. Add to `~/.zshrc`:
 
 ```zsh
 unalias dstp
 ```
 
-## Contributing
+## License
 
-All kinds of Pull Requests and Feature Requests are welcomed!
-
-## Licence
-
-dstp's source code is licenced under the [MIT License](https://choosealicense.com/licenses/mit/).
+[MIT](LICENSE)

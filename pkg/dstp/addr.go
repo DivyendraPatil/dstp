@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// getAddr extracts a hostname or IP from a URL, host:port, or bare address.
 func getAddr(addr string) (string, error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {

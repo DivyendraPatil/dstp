@@ -5,124 +5,124 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ycd/dstp/pkg/common"
 )
 
-func RunTest(ctx context.Context, wg *sync.WaitGroup, addr common.Address, count int, timeout int, result *common.Result) error {
-	return runPing(ctx, wg, addr, count, timeout, result)
+func RunTest(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error {
+	return runPing(ctx, addr, count, timeout, result)
 }
 
-func runPing(ctx context.Context, wg *sync.WaitGroup, addr common.Address, count int, timeout int, result *common.Result) error {
+func runPing(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error {
 	var output common.ResultPart
-	defer wg.Done()
 
 	pinger, err := createPinger(addr.String())
 	if err != nil {
-		return err
+		if out, ferr := runPingFallback(ctx, addr, count, timeout); ferr == nil {
+			output = common.OK(out.Content)
+		} else {
+			output = common.Fail(fmt.Errorf("failed to create pinger: %w", err))
+			result.Store(&result.Ping, output)
+			return output.Error
+		}
+		result.Store(&result.Ping, output)
+		return nil
 	}
 
 	pinger.Count = count
-	pinger.Timeout = time.Duration(timeout) * time.Second
+	pinger.Timeout = timeout
 
 	err = pinger.Run()
 	if err != nil {
-		if out, err := runPingFallback(ctx, addr, count); err == nil {
-			output = common.ResultPart{
-				Content: out.String(),
-			}
+		if out, ferr := runPingFallback(ctx, addr, count, timeout); ferr == nil {
+			output = common.OK(out.Content)
 		} else {
-			err := fmt.Errorf("failed to run ping: %v", err.Error())
-			result.Mu.Lock()
-			result.Ping = common.ResultPart{
-				Error: err,
-			}
-			result.Mu.Unlock()
-			return err
+			output = common.Fail(fmt.Errorf("failed to run ping: %w", err))
+			result.Store(&result.Ping, output)
+			return output.Error
 		}
 	} else {
 		stats := pinger.Statistics()
 		if stats.PacketsRecv == 0 {
-			if out, err := runPingFallback(ctx, addr, count); err == nil {
-				output = common.ResultPart{
-					Content: out.String(),
-				}
+			if out, ferr := runPingFallback(ctx, addr, count, timeout); ferr == nil {
+				output = common.OK(out.Content)
 			} else {
-				output = common.ResultPart{
-					Error: fmt.Errorf("no response"),
-				}
+				output = common.Fail(fmt.Errorf("no response"))
 			}
 		} else {
-			output = common.ResultPart{
-				Content: joinS(joinC(stats.AvgRtt.String())),
-			}
+			output = common.OK(stats.AvgRtt.String())
 		}
 	}
 
-	result.Mu.Lock()
-	result.Ping = output
-
-	result.Mu.Unlock()
-
-	return nil
+	result.Store(&result.Ping, output)
+	return output.Error
 }
 
-// runPingFallback executes the ping command from cli
-// Currently fallback is not implemented for windows.
-func runPingFallback(ctx context.Context, addr common.Address, count int) (common.ResultPart, error) {
-	args := fmt.Sprintf("-c %v", count)
-	command := fmt.Sprintf("ping %s %s", args, addr.String())
-
-	// This is not handled because the ping
-	// writes the output to stdout whether it fails or not
-	out, err := executeCommand(command)
-
-	po, err := parsePingOutput(out)
-	if err != nil {
-		return common.ResultPart{Error: err}, err
+// runPingFallback executes the system ping binary with argv (no shell).
+func runPingFallback(ctx context.Context, addr common.Address, count int, timeout time.Duration) (common.ResultPart, error) {
+	args := pingArgs(addr.String(), count, timeout)
+	out, err := executePing(ctx, args)
+	if err != nil && out == "" {
+		return common.Fail(err), err
 	}
 
-	return common.ResultPart{
-		Content: po.AvgRTT + "ms",
-	}, nil
+	po, perr := parsePingOutput(out)
+	if perr != nil {
+		return common.Fail(perr), perr
+	}
+
+	return common.OK(po.AvgRTT + "ms"), nil
 }
 
-func executeCommand(command string) (string, error) {
+func pingArgs(host string, count int, timeout time.Duration) []string {
+	secs := int(timeout.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	switch runtime.GOOS {
+	case "windows":
+		return []string{"ping", "-n", strconv.Itoa(count), "-w", strconv.Itoa(secs * 1000), host}
+	case "darwin":
+		return []string{"ping", "-c", strconv.Itoa(count), "-W", strconv.Itoa(secs * 1000), host}
+	default:
+		// Linux: -W is timeout per packet in seconds
+		return []string{"ping", "-c", strconv.Itoa(count), "-W", strconv.Itoa(secs), host}
+	}
+}
+
+func executePing(ctx context.Context, args []string) (string, error) {
+	if len(args) == 0 {
+		return "", fmt.Errorf("empty ping args")
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	var errb bytes.Buffer
-	var out string
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", command)
-	} else {
-		cmd = exec.Command("/bin/bash", "-c", command)
-	}
 	cmd.Stderr = &errb
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Printf("got error while tracing pipe: %v", err)
+		return "", err
 	}
-	err = cmd.Start()
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		return "", err
 	}
 
+	var out strings.Builder
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		out += scanner.Text() + "\n"
+		out.WriteString(scanner.Text())
+		out.WriteByte('\n')
 	}
 
-	if err := cmd.Wait(); err != nil {
-		return out, fmt.Errorf("got error: %v, stderr: %v", err, errb.String())
+	waitErr := cmd.Wait()
+	s := out.String()
+	if waitErr != nil && s == "" {
+		return s, fmt.Errorf("ping failed: %w, stderr: %s", waitErr, errb.String())
 	}
-
-	return out, nil
+	return s, nil
 }
 
 type pingOutput struct {
@@ -139,65 +139,45 @@ var (
 	PacketLossError     = fmt.Errorf("timeout error: 100.0%% packet loss")
 )
 
-// parsePingOutput parses the output of ping by parsing the stdout
-// example output:
-//
-// ping -c 3 jvns.ca
-// PING jvns.ca (104.21.91.206): 56 data bytes
-// 64 bytes from 104.21.91.206: icmp_seq=0 ttl=58 time=14.468 ms
-// 64 bytes from 104.21.91.206: icmp_seq=1 ttl=58 time=14.450 ms
-// 64 bytes from 104.21.91.206: icmp_seq=2 ttl=58 time=14.683 ms
-//
-// --- jvns.ca ping statistics ---
-// 3 packets transmitted, 3 packets received, 0.0% packet loss
-// round-trip min/avg/max/stddev = 14.450/14.534/14.683/0.106 ms
 func parsePingOutput(out string) (pingOutput, error) {
 	var po pingOutput
 
-	lines := strings.Split(out, "\n")
-
-	for _, line := range lines {
+	for _, line := range strings.Split(out, "\n") {
 		switch {
 		case strings.Contains(line, "packets transmitted"):
 			arr := strings.Split(line, ",")
 			if len(arr) < 3 {
 				continue
 			}
-
 			po.PacketTransmitted, po.PacketReceived, po.PacketLoss = arr[0], arr[1], arr[2]
 
 		case strings.Contains(line, "min/avg/max"):
 			l := strings.ReplaceAll(line, " = ", " ")
 			arr := strings.Split(l, " ")
-
-			if len(arr) != 4 {
+			if len(arr) < 3 {
 				continue
 			}
-
-			rttArr := strings.Split(arr[2], "/")
-			if len(rttArr) != 4 {
-				continue
+			// Find the token that looks like a/b/c[/d]
+			for _, tok := range arr {
+				rttArr := strings.Split(tok, "/")
+				if len(rttArr) >= 3 && looksLikeFloat(rttArr[0]) {
+					po.MinRTT, po.AvgRTT, po.MaxRTT = rttArr[0], rttArr[1], rttArr[2]
+					break
+				}
 			}
-
-			po.MinRTT, po.AvgRTT, po.MaxRTT = rttArr[0], rttArr[1], rttArr[2]
 		}
 	}
 
 	if po.MinRTT == "" && po.AvgRTT == "" && po.MaxRTT == "" {
 		return po, RequestTimeoutError
 	}
-
-	if po.PacketLoss == "100.0% packet loss" {
+	if strings.Contains(po.PacketLoss, "100") && strings.Contains(po.PacketLoss, "packet loss") {
 		return po, PacketLossError
 	}
-
 	return po, nil
 }
 
-func joinC(args ...string) string {
-	return strings.Join(args, ",")
-}
-
-func joinS(args ...string) string {
-	return strings.Join(args, " ")
+func looksLikeFloat(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
 }

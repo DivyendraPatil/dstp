@@ -1,96 +1,156 @@
+// Package common holds shared result types and terminal helpers for dstp.
 package common
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
+
+	"github.com/mattn/go-isatty"
 )
 
-type Args []string
-
+// Address is a hostname or IP under test.
 type Address string
 
+func (a Address) String() string { return string(a) }
+
+// ResultPart is one check outcome.
 type ResultPart struct {
-	Content string
-	Error   error
+	Content string `json:"content,omitempty"`
+	Error   error  `json:"-"`
+	Status  string `json:"status"` // ok | error | skipped
 }
 
 func (o ResultPart) String() string {
 	if o.Error != nil {
 		return Red(o.Error.Error())
 	}
-
 	return o.Content
 }
 
-// value returns Content on success, or the error string on failure.
-func (o ResultPart) value() string {
+func (o ResultPart) message() string {
 	if o.Error != nil {
 		return o.Error.Error()
 	}
 	return o.Content
 }
 
-func (a Address) String() string {
-	return string(a)
-}
+// OK is a successful check result.
+func OK(content string) ResultPart { return ResultPart{Content: content, Status: "ok"} }
 
+// Fail is a failed check result.
+func Fail(err error) ResultPart { return ResultPart{Error: err, Status: "error"} }
+
+// Skipped marks a check that was not run.
+func Skipped() ResultPart { return ResultPart{Content: "skipped", Status: "skipped"} }
+
+// Result aggregates all connectivity checks.
 type Result struct {
-	Ping ResultPart `json:"ping"`
-	// DNS is resolution via the default system resolver.
-	DNS ResultPart `json:"dns"`
-	// SystemDNS is resolution via the configured resolver (system or --dns).
-	// Plaintext output labels this ConfiguredDNS.
-	SystemDNS ResultPart `json:"system_dns"`
+	Ping      ResultPart `json:"ping"`
+	DNS       ResultPart `json:"dns"`            // default resolver (or DoH)
+	SystemDNS ResultPart `json:"system_dns"`     // configured resolver (--dns)
+	Records   ResultPart `json:"records"`        // A/AAAA/CNAME/MX/NS/TXT
+	TCP       ResultPart `json:"tcp"`
 	TLS       ResultPart `json:"tls"`
 	HTTPS     ResultPart `json:"https"`
-
-	Mu sync.Mutex `json:"-"`
+	Mu        sync.Mutex `json:"-"`
 }
 
-func (r *Result) Output(outputType string) string {
-	var output string
+// Store writes a part under the result mutex.
+func (r *Result) Store(dst *ResultPart, part ResultPart) {
+	r.Mu.Lock()
+	*dst = part
+	r.Mu.Unlock()
+}
 
-	switch outputType {
-	case "plaintext":
-		parts := []struct {
-			name string
-			part ResultPart
-		}{
-			{"Ping", r.Ping},
-			{"DNS", r.DNS},
-			{"ConfiguredDNS", r.SystemDNS},
-			{"TLS", r.TLS},
-			{"HTTPS", r.HTTPS},
+// Failed reports whether any executed check failed.
+func (r *Result) Failed() bool {
+	for _, p := range r.parts() {
+		if p.part.Status == "error" || p.part.Error != nil {
+			return true
 		}
-		for _, p := range parts {
+	}
+	return false
+}
+
+type namedPart struct {
+	name string
+	key  string
+	part ResultPart
+}
+
+func (r *Result) parts() []namedPart {
+	return []namedPart{
+		{"Ping", "ping", r.Ping},
+		{"DNS", "dns", r.DNS},
+		{"ConfiguredDNS", "system_dns", r.SystemDNS},
+		{"Records", "records", r.Records},
+		{"TCP", "tcp", r.TCP},
+		{"TLS", "tls", r.TLS},
+		{"HTTPS", "https", r.HTTPS},
+	}
+}
+
+// Output renders plaintext or JSON.
+func (r *Result) Output(outputType string) string {
+	if outputType == "json" {
+		return r.jsonOutput()
+	}
+	return r.plaintextOutput()
+}
+
+func (r *Result) plaintextOutput() string {
+	var output string
+	for _, p := range r.parts() {
+		if p.part.Status == "" && p.part.Content == "" && p.part.Error == nil {
+			continue
+		}
+		switch {
+		case p.part.Error != nil || p.part.Status == "error":
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Red(p.part.message()))
+		case p.part.Status == "skipped":
+			output += fmt.Sprintf("%s: %s\n", White(p.name), p.part.Content)
+		default:
+			output += fmt.Sprintf("%s: %s\n", White(p.name), Green(p.part.Content))
+		}
+	}
+	return output
+}
+
+func (r *Result) jsonOutput() string {
+	type item struct {
+		Status  string `json:"status"`
+		Content string `json:"content,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
+	out := map[string]item{}
+	for _, p := range r.parts() {
+		if p.part.Status == "" && p.part.Content == "" && p.part.Error == nil {
+			continue
+		}
+		it := item{Status: p.part.Status}
+		if it.Status == "" {
 			if p.part.Error != nil {
-				output += fmt.Sprintf("%s: %v\n", White(p.name), p.part)
+				it.Status = "error"
 			} else {
-				output += fmt.Sprintf("%s: %v\n", White(p.name), Green(p.part.Content))
+				it.Status = "ok"
 			}
 		}
-	case "json":
-		v := map[string]string{}
-		if s := r.Ping.value(); s != "" {
-			v["ping"] = s
+		if p.part.Error != nil {
+			it.Error = p.part.Error.Error()
+		} else if p.part.Content != "" {
+			it.Content = p.part.Content
 		}
-		if s := r.DNS.value(); s != "" {
-			v["dns"] = s
-		}
-		if s := r.SystemDNS.value(); s != "" {
-			v["system_dns"] = s
-		}
-		if s := r.TLS.value(); s != "" {
-			v["tls"] = s
-		}
-		if s := r.HTTPS.value(); s != "" {
-			v["https"] = s
-		}
-
-		byt, _ := json.MarshalIndent(v, "", "  ")
-		output += string(byt)
+		out[p.key] = it
 	}
+	byt, _ := json.MarshalIndent(out, "", "  ")
+	return string(byt)
+}
 
-	return output
+// InitColor disables ANSI colors when stdout is not a TTY or NO_COLOR is set.
+func InitColor() {
+	if os.Getenv("NO_COLOR") != "" || !isatty.IsTerminal(os.Stdout.Fd()) {
+		SetNoColor(true)
+	}
 }

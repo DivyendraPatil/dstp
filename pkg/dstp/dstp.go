@@ -1,14 +1,10 @@
+// Package dstp runs parallel connectivity checks against a host or IP.
 package dstp
 
 import (
 	"context"
-	"crypto/tls"
-	"fmt"
-	"math"
-	"net"
-	"net/http"
+	"errors"
 	"sync"
-	"time"
 
 	"github.com/ycd/dstp/config"
 	"github.com/ycd/dstp/pkg/common"
@@ -16,142 +12,150 @@ import (
 	"github.com/ycd/dstp/pkg/ping"
 )
 
-// RunAllTests executes all the tests against the given domain, IP or DNS server.
-func RunAllTests(ctx context.Context, config config.Config) error {
-	var result common.Result
+// ErrChecksFailed is returned when one or more connectivity checks failed.
+var ErrChecksFailed = errors.New("one or more checks failed")
 
-	addr, err := getAddr(config.Addr)
+// RunAllTests executes selected checks against the given domain or IP.
+// It prints results to stdout. Returns ErrChecksFailed if any check failed.
+func RunAllTests(ctx context.Context, cfg config.Config) error {
+	common.InitColor()
+
+	addr, err := getAddr(cfg.Addr)
 	if err != nil {
 		return err
 	}
 
-	if config.Timeout == -1 {
-		config.Timeout = 2 * config.PingCount
+	timeout := cfg.TimeoutDuration()
+	port := cfg.Port
+	if port == "" {
+		port = "443"
+	}
+	tcpPort := cfg.TCPPort
+	if tcpPort == "" {
+		tcpPort = port
+	}
+
+	var result common.Result
+	progress := newProgress(!cfg.Quiet && cfg.Output != "json")
+
+	type job struct {
+		name string
+		run  func()
+	}
+
+	jobs := []job{
+		{"ping", func() {
+			progress.start("ping")
+			_ = ping.RunTest(ctx, common.Address(addr), cfg.PingCount, timeout, &result)
+			progress.done("ping", snapshot(&result, "ping"))
+		}},
+		{"dns", func() {
+			progress.start("dns")
+			_ = lookup.Default(ctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, &result)
+			progress.done("dns", snapshot(&result, "dns"))
+		}},
+		{"configured_dns", func() {
+			progress.start("configured_dns")
+			_ = lookup.Host(ctx, common.Address(addr), cfg.CustomDnsServer, timeout, &result)
+			progress.done("configured_dns", snapshot(&result, "configured_dns"))
+		}},
+		{"records", func() {
+			progress.start("records")
+			_ = lookup.Records(ctx, common.Address(addr), timeout, &result)
+			progress.done("records", snapshot(&result, "records"))
+		}},
+		{"tcp", func() {
+			progress.start("tcp")
+			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, &result)
+			progress.done("tcp", snapshot(&result, "tcp"))
+		}},
+		{"tls", func() {
+			progress.start("tls")
+			_ = testTLS(ctx, common.Address(addr), port, timeout, &result)
+			progress.done("tls", snapshot(&result, "tls"))
+		}},
+		{"https", func() {
+			progress.start("https")
+			_ = testHTTPS(ctx, common.Address(addr), port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, &result)
+			progress.done("https", snapshot(&result, "https"))
+		}},
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(5)
-
-	go ping.RunTest(ctx, &wg, common.Address(addr), config.PingCount, config.Timeout, &result)
-
-	// DNS: default system resolver. SystemDNS: configured resolver (system or --dns).
-	go lookup.Default(ctx, &wg, common.Address(addr), config.Timeout, &result)
-
-	go lookup.Host(ctx, &wg, common.Address(addr), config.CustomDnsServer, &result)
-
-	go testTLS(ctx, &wg, common.Address(addr), config.Timeout, config.Port, &result)
-
-	go testHTTPS(ctx, &wg, common.Address(addr), config.Timeout, config.Port, &result)
+	for _, j := range jobs {
+		j := j
+		if shouldSkip(cfg, j.name) {
+			setSkipped(&result, j.name)
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			j.run()
+		}()
+	}
 	wg.Wait()
 
-	s := result.Output(config.Output)
-
-	printWithColor(s)
-
-	return nil
-}
-
-func testTLS(ctx context.Context, wg *sync.WaitGroup, address common.Address, t int, port string, result *common.Result) error {
-	var output string
-	defer wg.Done()
-
-	p := "443"
-
-	if port != "" {
-		p = port
-	}
-
-	dialer := &net.Dialer{Timeout: time.Duration(t) * time.Second}
-	rawConn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(string(address), p))
-	if err != nil {
-		result.Mu.Lock()
-		result.TLS = common.ResultPart{
-			Error: err,
-		}
-		result.Mu.Unlock()
-		return err
-	}
-
-	conn := tls.Client(rawConn, &tls.Config{
-		ServerName: string(address),
-	})
-	if err := conn.HandshakeContext(ctx); err != nil {
-		_ = rawConn.Close()
-		result.Mu.Lock()
-		result.TLS = common.ResultPart{
-			Error: err,
-		}
-		result.Mu.Unlock()
-		return err
-	}
-	defer conn.Close()
-
-	err = conn.VerifyHostname(string(address))
-	if err != nil {
-		result.Mu.Lock()
-		result.TLS = common.ResultPart{
-			Error: err,
-		}
-		result.Mu.Unlock()
-		return err
-	}
-
-	notAfter := conn.ConnectionState().PeerCertificates[0].NotAfter
-	expiresAfter := time.Until(notAfter)
-	expiry := math.Round(expiresAfter.Hours() / 24)
-	if expiry > 0 {
-		output += fmt.Sprintf("certificate is valid for %v more days", expiry)
+	out := result.Output(cfg.Output)
+	if cfg.Output == "json" {
+		printWithColor(out + "\n")
 	} else {
-		output += fmt.Sprintf("the certificate expired %v days ago", -expiry)
+		printWithColor(out)
 	}
 
-	result.Mu.Lock()
-	result.TLS = common.ResultPart{
-		Content: output,
+	if result.Failed() {
+		return ErrChecksFailed
 	}
-	result.Mu.Unlock()
-
 	return nil
 }
 
-func testHTTPS(ctx context.Context, wg *sync.WaitGroup, address common.Address, t int, port string, result *common.Result) error {
-	defer wg.Done()
-
-	url := fmt.Sprintf("https://%s", address.String())
-	if port != "" {
-		url += fmt.Sprintf(":%s", port)
+func shouldSkip(cfg config.Config, name string) bool {
+	if cfg.ShouldSkip(name) {
+		return true
 	}
+	// legacy alias
+	return name == "configured_dns" && cfg.ShouldSkip("system_dns")
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		result.Mu.Lock()
-		result.HTTPS = common.ResultPart{
-			Error: err,
-		}
-		result.Mu.Unlock()
-		return err
-	}
-
-	client := http.Client{
-		Timeout: time.Second * time.Duration(t),
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		result.Mu.Lock()
-		result.HTTPS = common.ResultPart{
-			Error: err,
-		}
-		result.Mu.Unlock()
-		return err
-	}
-	defer resp.Body.Close()
-
+func snapshot(result *common.Result, name string) common.ResultPart {
 	result.Mu.Lock()
-	result.HTTPS = common.ResultPart{
-		Content: fmt.Sprintf("got %s", resp.Status),
+	defer result.Mu.Unlock()
+	switch name {
+	case "ping":
+		return result.Ping
+	case "dns":
+		return result.DNS
+	case "configured_dns":
+		return result.SystemDNS
+	case "records":
+		return result.Records
+	case "tcp":
+		return result.TCP
+	case "tls":
+		return result.TLS
+	case "https":
+		return result.HTTPS
+	default:
+		return common.ResultPart{}
 	}
-	result.Mu.Unlock()
+}
 
-	return nil
+func setSkipped(result *common.Result, name string) {
+	s := common.Skipped()
+	switch name {
+	case "ping":
+		result.Store(&result.Ping, s)
+	case "dns":
+		result.Store(&result.DNS, s)
+	case "configured_dns":
+		result.Store(&result.SystemDNS, s)
+	case "records":
+		result.Store(&result.Records, s)
+	case "tcp":
+		result.Store(&result.TCP, s)
+	case "tls":
+		result.Store(&result.TLS, s)
+	case "https":
+		result.Store(&result.HTTPS, s)
+	}
 }

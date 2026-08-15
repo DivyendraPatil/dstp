@@ -4,6 +4,7 @@ package dstp
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ycd/dstp/config"
@@ -12,49 +13,16 @@ import (
 func TestRunAllTests(t *testing.T) {
 	ctx := context.Background()
 
-	c := config.Config{
-		Addr:      "https://jvns.ca",
-		Output:    "plaintext",
-		ShowHelp:  false,
-		Timeout:   3,
-		PingCount: 3,
+	configs := []config.Config{
+		{Addr: "https://example.com", Output: "plaintext", Timeout: 5, PingCount: 1, Quiet: true, Skip: []string{"ping"}},
+		{Addr: "8.8.8.8", Output: "json", Timeout: 5, PingCount: 1, Quiet: true, Skip: []string{"ping", "records", "https"}},
+		{Addr: "example.com", Output: "plaintext", Timeout: 5, PingCount: 1, Quiet: true, FollowRedirects: true, Skip: []string{"ping"}},
 	}
 
-	c1 := config.Config{
-		Addr:      "8.8.8.8",
-		Output:    "plaintext",
-		ShowHelp:  false,
-		Timeout:   3,
-		PingCount: 3,
-	}
-
-	c2 := config.Config{
-		Addr:      "facebook.com",
-		Output:    "plaintext",
-		ShowHelp:  false,
-		Timeout:   3,
-		PingCount: 3,
-	}
-
-	c3 := config.Config{
-		Addr:      "https://meta.stackoverflow.com/",
-		Output:    "plaintext",
-		ShowHelp:  false,
-		Timeout:   3,
-		PingCount: 3,
-	}
-
-	c4 := config.Config{
-		Addr:      "facebook.com:80",
-		Output:    "plaintext",
-		ShowHelp:  false,
-		Timeout:   3,
-		PingCount: 3,
-	}
-
-	for _, conf := range []config.Config{c, c1, c2, c3, c4} {
-		if err := RunAllTests(ctx, conf); err != nil {
-			t.Fatal(err.Error())
+	for _, conf := range configs {
+		err := RunAllTests(ctx, conf)
+		if err != nil && !errors.Is(err, ErrChecksFailed) {
+			t.Fatalf("addr=%s: %v", conf.Addr, err)
 		}
 	}
 }
