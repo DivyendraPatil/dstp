@@ -3,16 +3,15 @@
 Run networking checks against a host — ping, DNS, TCP/UDP, TLS, HTTP/HTTPS — in one command.
 
 ```bash
-go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
+GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
+hash -r
 dstp example.com
 ```
 
-If `dstp` is “command not found” after install, your `GOBIN` may not be on `PATH`. Fix:
+If you use **asdf** (or another Go toolchain manager), `go install` may write to the toolchain’s bin while an older `~/go/bin/dstp` stays first on `PATH`. Prefer the `GOBIN=…` form above so the binary lands where `which dstp` looks.
 
-```bash
-GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
-export PATH="$(go env GOPATH)/bin:$PATH"
-```
+`go install @vX.Y.Z` reports `commit none, built unknown` unless you build with `-ldflags` (as `make install` / release binaries do). That is expected — version number is still correct.
 
 Exit codes: `0` success (or help/version), `1` check failure, `2` bad usage, `130` interrupted.
 
@@ -22,7 +21,7 @@ Requires **Go 1.26.0+** (CI/toolchain uses **1.26.6**).
 
 ```bash
 GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
-	# or from a clone:
+	# or from a clone (embeds version/commit/date):
 make install
 ```
 
@@ -45,7 +44,7 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | `--doh-bootstrap` | Dial this IP for DoH while keeping TLS server name (bootstrap without system DNS) |
 | `--method HEAD` | HTTP(S) method |
 | `--follow-redirects` | Follow redirects |
-| `--profile` | Preset: **`web`** (default), `mail`, `dns`, `api`, `full` |
+| `--profile` | Preset: **`web`** (default), `mail`, `dns`, `api`, `network`, `full` |
 | `--insecure` | Skip TLS verify only when set (security risk) |
 | `--extra` | traceroute, whois, MTU (requires local tools) |
 | `--skip ping,http` | Extra skips merged with the profile; `--skip=` clears YAML skips |
@@ -55,7 +54,7 @@ Binary releases (when published): download the archive for your OS from GitHub R
 
 Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `routing`, `rdap`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`.
 
-Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`. Skipped checks are omitted from plaintext (still present in JSON).
+Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`. Skipped checks are omitted from plaintext (still present in JSON). HTTPS/HTTP3 **403** with Cloudflare/`cf-ray` is reported as a warning with an edge challenge/WAF note (transport still OK).
 
 **Profiles**
 
@@ -68,7 +67,7 @@ Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on 
 | `network` | ASN/prefix/RPKI, RDAP, ping/DNS, traceroute/MTU | HTTP/TLS stack, mail, dnssec, whois |
 | `full` | Everything | — |
 
-`network` auto-enables `--extra` (traceroute/MTU). Routing uses RIPEstat (no API key); hop ASN notes use Team Cymru DNS. JSON keeps per-check keys and may add a structured `network` object.
+`network` auto-enables `--extra` (traceroute/MTU). Routing uses RIPEstat (no API key); hop ASN notes use Team Cymru DNS. JSON keeps per-check keys and may add a structured `network` object (primary IP plus optional `also`/`note` when v4 and v6 origin ASNs differ).
 
 Default UDP `:53` (in `dns`/`full`) retargets to an NS host when the address is a web/CDN name. TLS warns when the cert expires in ≤30 days and reports chain length, OCSP stapling, and CT/SCT hints.
 
@@ -111,6 +110,7 @@ Precedence: defaults → YAML → CLI flags → **positional target**. Unknown Y
 ## Completions & man page
 
 ```bash
+make completions          # regenerate from Registry / CheckIDs()
 source completions/dstp.zsh   # zsh
 source completions/dstp.bash  # bash
 man ./man/dstp.1

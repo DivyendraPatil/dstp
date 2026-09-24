@@ -10,33 +10,86 @@ import (
 
 	"github.com/DivyendraPatil/dstp/pkg/common"
 	"github.com/DivyendraPatil/dstp/pkg/routing"
-	"github.com/DivyendraPatil/dstp/pkg/routing/rdap"
-	"github.com/DivyendraPatil/dstp/pkg/routing/ripestat"
 )
 
-func testRouting(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
+func (rn *Runner) testRouting(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
 	ctx, cancel := withCheckTimeout(ctx, timeout)
 	defer cancel()
 
-	ip, err := primaryPublicIP(ctx, address.String())
+	v4, v6, err := publicIPsByFamily(ctx, address.String())
 	if err != nil {
-		result.Store(&result.Routing, common.Inconclusive(fmt.Sprintf("resolve: %v", err)))
+		result.Store(common.KeyRouting, common.Inconclusive(fmt.Sprintf("resolve: %v", err)))
 		return nil
 	}
-	if !routing.IsPublicRoutable(ip) {
-		msg := fmt.Sprintf("%s is %s; ASN/RPKI not queried", ip, routing.ClassifyAddr(ip))
-		result.Store(&result.Routing, common.Inconclusive(msg))
+	primary := v4
+	if !primary.IsValid() {
+		primary = v6
+	}
+	if !primary.IsValid() {
+		result.Store(common.KeyRouting, common.Inconclusive("no addresses"))
+		return nil
+	}
+	if !routing.IsPublicRoutable(primary) {
+		msg := fmt.Sprintf("%s is %s; ASN/RPKI not queried", primary, routing.ClassifyAddr(primary))
+		result.Store(common.KeyRouting, common.Inconclusive(msg))
 		return nil
 	}
 
-	info, err := ripestat.New().LookupRouting(ctx, ip)
+	provider := rn.routingProvider()
+	info, err := provider.LookupRouting(ctx, primary)
 	if err != nil {
-		// Enrichment failure → inconclusive/unknown, not a hard target error.
-		result.Store(&result.Routing, common.Inconclusive(fmt.Sprintf("routing lookup: %v", err)))
+		result.Store(common.KeyRouting, common.Inconclusive(fmt.Sprintf("routing lookup: %v", err)))
 		return nil
 	}
-	result.StoreNetwork(info)
 
+	report := routing.NetworkReport{
+		RoutingInfo: info,
+	}
+
+	// Dual-stack: when the other family resolves publicly, look it up too.
+	var other netip.Addr
+	if primary.Is4() && v6.IsValid() && routing.IsPublicRoutable(v6) {
+		other = v6
+	} else if primary.Is6() && v4.IsValid() && routing.IsPublicRoutable(v4) {
+		other = v4
+	}
+	if other.IsValid() {
+		alt, aerr := provider.LookupRouting(ctx, other)
+		if aerr == nil && alt.ASN.ASN != 0 {
+			if alt.ASN.ASN != info.ASN.ASN {
+				report.Also = &alt
+				as4, as6 := info.ASN.ASN, alt.ASN.ASN
+				if primary.Is6() {
+					as4, as6 = alt.ASN.ASN, info.ASN.ASN
+				}
+				report.Note = fmt.Sprintf("v4 AS%d vs v6 AS%d", as4, as6)
+			} else {
+				report.Note = fmt.Sprintf("v4+v6 AS%d", info.ASN.ASN)
+			}
+		}
+	}
+
+	result.StoreNetwork(report)
+
+	content := formatRoutingSummary(info)
+	if report.Also != nil {
+		content += "; also " + formatRoutingSummary(*report.Also)
+	} else if report.Note != "" && strings.HasPrefix(report.Note, "v4+v6") {
+		content += "; " + report.Note
+	}
+
+	switch info.RPKI.Status {
+	case routing.RPKIInvalid:
+		result.Store(common.KeyRouting, common.Warn(content))
+	case routing.RPKIUnknown:
+		result.Store(common.KeyRouting, common.Inconclusive(content))
+	default:
+		result.Store(common.KeyRouting, common.OK(content))
+	}
+	return nil
+}
+
+func formatRoutingSummary(info routing.RoutingInfo) string {
 	var parts []string
 	if info.ASN.ASN != 0 {
 		parts = append(parts, fmt.Sprintf("AS%d", info.ASN.ASN))
@@ -54,25 +107,15 @@ func testRouting(ctx context.Context, address common.Address, timeout time.Durat
 		}
 		parts = append(parts, rpki)
 	}
-	parts = append(parts, "ip="+ip.String())
-	content := strings.Join(parts, "; ")
-
-	switch info.RPKI.Status {
-	case routing.RPKIInvalid:
-		result.Store(&result.Routing, common.Warn(content))
-	case routing.RPKIUnknown:
-		result.Store(&result.Routing, common.Inconclusive(content))
-	default:
-		result.Store(&result.Routing, common.OK(content))
-	}
-	return nil
+	parts = append(parts, "ip="+info.IP.String())
+	return strings.Join(parts, "; ")
 }
 
-func testRDAPCheck(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
+func (rn *Runner) testRDAPCheck(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
 	ctx, cancel := withCheckTimeout(ctx, timeout)
 	defer cancel()
 
-	client := rdap.New()
+	client := rn.rdapProvider()
 	host := address.String()
 
 	var (
@@ -91,7 +134,7 @@ func testRDAPCheck(ctx context.Context, address common.Address, timeout time.Dur
 		}
 	}
 	if err != nil {
-		result.Store(&result.RDAP, common.Inconclusive(fmt.Sprintf("rdap: %v", err)))
+		result.Store(common.KeyRDAP, common.Inconclusive(fmt.Sprintf("rdap: %v", err)))
 		return nil
 	}
 
@@ -119,18 +162,37 @@ func testRDAPCheck(ctx context.Context, address common.Address, timeout time.Dur
 	if len(parts) == 0 {
 		parts = append(parts, "rdap ok")
 	}
-	result.Store(&result.RDAP, common.OK(strings.Join(parts, "; ")))
+	result.Store(common.KeyRDAP, common.OK(strings.Join(parts, "; ")))
 	return nil
 }
 
 // primaryPublicIP resolves host and returns a preferred public address (v4 then v6).
 func primaryPublicIP(ctx context.Context, host string) (netip.Addr, error) {
-	if ip, err := netip.ParseAddr(host); err == nil {
-		return ip, nil
+	v4, v6, err := publicIPsByFamily(ctx, host)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	if v4.IsValid() {
+		return v4, nil
+	}
+	if v6.IsValid() {
+		return v6, nil
+	}
+	return netip.Addr{}, fmt.Errorf("no addresses for %s", host)
+}
+
+// publicIPsByFamily returns the first public routable IPv4 and IPv6 (may be invalid).
+func publicIPsByFamily(ctx context.Context, host string) (v4, v6 netip.Addr, err error) {
+	if ip, perr := netip.ParseAddr(host); perr == nil {
+		ip = ip.Unmap()
+		if ip.Is4() {
+			return ip, netip.Addr{}, nil
+		}
+		return netip.Addr{}, ip, nil
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return netip.Addr{}, err
+		return netip.Addr{}, netip.Addr{}, err
 	}
 	var first netip.Addr
 	for _, a := range addrs {
@@ -142,22 +204,24 @@ func primaryPublicIP(ctx context.Context, host string) (netip.Addr, error) {
 		if !first.IsValid() {
 			first = addr
 		}
-		if routing.IsPublicRoutable(addr) && addr.Is4() {
-			return addr, nil
-		}
-	}
-	for _, a := range addrs {
-		addr, ok := netip.AddrFromSlice(a.IP)
-		if !ok {
+		if !routing.IsPublicRoutable(addr) {
 			continue
 		}
-		addr = addr.Unmap()
-		if routing.IsPublicRoutable(addr) {
-			return addr, nil
+		if addr.Is4() && !v4.IsValid() {
+			v4 = addr
+		}
+		if addr.Is6() && !v6.IsValid() {
+			v6 = addr
 		}
 	}
-	if first.IsValid() {
-		return first, nil
+	if v4.IsValid() || v6.IsValid() {
+		return v4, v6, nil
 	}
-	return netip.Addr{}, fmt.Errorf("no addresses for %s", host)
+	if first.IsValid() {
+		if first.Is4() {
+			return first, netip.Addr{}, nil
+		}
+		return netip.Addr{}, first, nil
+	}
+	return netip.Addr{}, netip.Addr{}, fmt.Errorf("no addresses for %s", host)
 }

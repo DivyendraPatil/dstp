@@ -5,19 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/DivyendraPatil/dstp/pkg/routing"
+	"github.com/DivyendraPatil/dstp/pkg/routing/httpx"
 )
 
 const (
 	defaultIPURL     = "https://rdap.org/ip/"
 	defaultDomainURL = "https://rdap.org/domain/"
-	maxBody          = 1 << 20
 )
 
 // Client performs RDAP lookups with timeouts and body limits.
@@ -32,22 +31,7 @@ func New() *Client {
 	return &Client{
 		IPBaseURL:     defaultIPURL,
 		DomainBaseURL: defaultDomainURL,
-		HTTPClient: &http.Client{
-			Timeout: 15 * time.Second,
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				MaxIdleConns:          4,
-				IdleConnTimeout:       30 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 10 * time.Second,
-			},
-			CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-				if len(via) >= 5 {
-					return fmt.Errorf("stopped after 5 redirects")
-				}
-				return nil
-			},
-		},
+		HTTPClient:    httpx.NewRedirectClient(15*time.Second, 5),
 	}
 }
 
@@ -92,24 +76,13 @@ func (c *Client) fetch(ctx context.Context, kind, rawURL string) (routing.RDAPIn
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return routing.RDAPInfo{}, err
-	}
-	req.Header.Set("Accept", "application/rdap+json, application/json")
-	req.Header.Set("User-Agent", "dstp (https://github.com/DivyendraPatil/dstp)")
-
-	resp, err := hc.Do(req)
+	body, status, err := httpx.GetLimited(ctx, hc, rawURL,
+		"application/rdap+json, application/json", httpx.DefaultUserAgent, httpx.DefaultMaxBody)
 	if err != nil {
 		return routing.RDAPInfo{Kind: kind, Source: "rdap"}, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return routing.RDAPInfo{Kind: kind, Source: "rdap"}, err
-	}
-	if resp.StatusCode >= 400 {
-		return routing.RDAPInfo{Kind: kind, Source: "rdap"}, fmt.Errorf("rdap HTTP %s", resp.Status)
+	if status >= 400 {
+		return routing.RDAPInfo{Kind: kind, Source: "rdap"}, fmt.Errorf("rdap HTTP %d", status)
 	}
 	info, err := normalizeRDAP(kind, body)
 	if err != nil {

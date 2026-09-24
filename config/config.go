@@ -17,6 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/DivyendraPatil/dstp/internal/version"
+	"github.com/DivyendraPatil/dstp/pkg/common"
 )
 
 // Sentinel errors for CLI exit mapping.
@@ -253,12 +254,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	}
 	opts.Output = out
 
-	known := map[string]struct{}{
-		"ping": {}, "dns": {}, "configured_dns": {}, "system_dns": {}, "records": {},
-		"mail": {}, "dnssec": {}, "routing": {}, "rdap": {},
-		"tcp": {}, "udp": {}, "tls": {}, "http": {}, "https": {}, "http3": {}, "cdn": {},
-		"traceroute": {}, "whois": {}, "mtu": {},
-	}
+	known := common.KnownSkipNames()
 	for _, s := range opts.Skip {
 		if _, ok := known[strings.ToLower(strings.TrimSpace(s))]; !ok {
 			return nil, fmt.Errorf("%w: unknown skip check %q", ErrUsage, s)

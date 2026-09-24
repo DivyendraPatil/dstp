@@ -1,4 +1,4 @@
-.PHONY: build test vet install fmt lint race integration cover vuln release-check check
+.PHONY: build test vet install fmt lint race integration cover vuln release-check check completions
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -44,5 +44,8 @@ release-check:
 
 vet:
 	go vet ./...
+
+completions:
+	go run ./cmd/gencompletions .
 
 check: fmt vet lint test race release-check

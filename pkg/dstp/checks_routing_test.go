@@ -22,15 +22,17 @@ func TestFormatRoutingSpecialUse(t *testing.T) {
 	result := &common.Result{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	err := testRouting(ctx, common.Address("10.0.0.1"), 2*time.Second, result)
+	rn := &Runner{}
+	err := rn.testRouting(ctx, common.Address("10.0.0.1"), 2*time.Second, result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Routing.Status != common.StatusInconclusive {
-		t.Fatalf("%+v", result.Routing)
+	part := result.Get(common.KeyRouting)
+	if part.Status != common.StatusInconclusive {
+		t.Fatalf("%+v", part)
 	}
-	if !strings.Contains(result.Routing.Content, string(routing.AddrPrivate)) {
-		t.Fatalf("%q", result.Routing.Content)
+	if !strings.Contains(part.Content, string(routing.AddrPrivate)) {
+		t.Fatalf("%q", part.Content)
 	}
 }
 

@@ -68,7 +68,7 @@ func testCDN(ctx context.Context, target Target, port string, timeout time.Durat
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
-		result.Store(&result.CDN, common.Fail(err))
+		result.Store(common.KeyCDN, common.Fail(err))
 		return err
 	}
 	resp, err := client.Do(req)
@@ -76,17 +76,17 @@ func testCDN(ctx context.Context, target Target, port string, timeout time.Durat
 		// Fall back to GET if HEAD blocked.
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
-			result.Store(&result.CDN, common.Fail(err))
+			result.Store(common.KeyCDN, common.Fail(err))
 			return err
 		}
 		resp, err = client.Do(req)
 	}
 	if err != nil {
 		if len(parts) > 0 {
-			result.Store(&result.CDN, common.Warn(strings.Join(parts, "; ")+"; https probe failed: "+err.Error()))
+			result.Store(common.KeyCDN, common.Warn(strings.Join(parts, "; ")+"; https probe failed: "+err.Error()))
 			return nil
 		}
-		result.Store(&result.CDN, common.Fail(err))
+		result.Store(common.KeyCDN, common.Fail(err))
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -101,10 +101,10 @@ func testCDN(ctx context.Context, target Target, port string, timeout time.Durat
 
 	content := strings.Join(parts, "; ")
 	if warn {
-		result.Store(&result.CDN, common.Warn(content))
+		result.Store(common.KeyCDN, common.Warn(content))
 		return nil
 	}
-	result.Store(&result.CDN, common.OK(content))
+	result.Store(common.KeyCDN, common.OK(content))
 	return nil
 }
 

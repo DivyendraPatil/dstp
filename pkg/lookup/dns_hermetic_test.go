@@ -81,10 +81,10 @@ func TestHostHermeticDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SystemDNS.Status != common.StatusOK {
-		t.Fatalf("%+v", result.SystemDNS)
+	if result.Get(common.KeyConfiguredDNS).Status != common.StatusOK {
+		t.Fatalf("%+v", result.Get(common.KeyConfiguredDNS))
 	}
-	if !strings.Contains(result.SystemDNS.Content, "9.9.9.9") {
-		t.Fatalf("content=%q", result.SystemDNS.Content)
+	if !strings.Contains(result.Get(common.KeyConfiguredDNS).Content, "9.9.9.9") {
+		t.Fatalf("content=%q", result.Get(common.KeyConfiguredDNS).Content)
 	}
 }

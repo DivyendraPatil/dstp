@@ -137,14 +137,14 @@ func TestHostTruncatedUDPFallsBackToTCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SystemDNS.Status != common.StatusOK {
-		t.Fatalf("%+v", result.SystemDNS)
+	if result.Get(common.KeyConfiguredDNS).Status != common.StatusOK {
+		t.Fatalf("%+v", result.Get(common.KeyConfiguredDNS))
 	}
 	if atomic.LoadInt32(hits) < 1 {
 		t.Fatal("expected TCP fallback hit")
 	}
-	if !containsIPStr(result.SystemDNS.Content, "8.8.4.4") {
-		t.Fatalf("content=%q", result.SystemDNS.Content)
+	if !containsIPStr(result.Get(common.KeyConfiguredDNS).Content, "8.8.4.4") {
+		t.Fatalf("content=%q", result.Get(common.KeyConfiguredDNS).Content)
 	}
 }
 

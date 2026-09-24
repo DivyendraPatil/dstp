@@ -20,7 +20,7 @@ func Default(ctx context.Context, addr common.Address, timeout time.Duration, do
 
 	host := addr.String()
 	if ip := net.ParseIP(host); ip != nil {
-		result.Store(&result.DNS, common.Inconclusive("forward DNS not applicable for literal IP (use PTR via records)"))
+		result.Store(common.KeyDNS, common.Inconclusive("forward DNS not applicable for literal IP (use PTR via records)"))
 		return nil
 	}
 
@@ -32,11 +32,11 @@ func Default(ctx context.Context, addr common.Address, timeout time.Duration, do
 		addrs, err = net.DefaultResolver.LookupHost(lookupCtx, host)
 	}
 	if err != nil {
-		result.Store(&result.DNS, common.Fail(err))
+		result.Store(common.KeyDNS, common.Fail(err))
 		return err
 	}
 
-	result.Store(&result.DNS, common.OK(formatAddrs(addrs)))
+	result.Store(common.KeyDNS, common.OK(formatAddrs(addrs)))
 	return nil
 }
 
@@ -47,18 +47,18 @@ func Host(ctx context.Context, addr common.Address, customDnsServer string, time
 
 	host := addr.String()
 	if ip := net.ParseIP(host); ip != nil {
-		result.Store(&result.SystemDNS, common.Inconclusive("forward DNS not applicable for literal IP"))
+		result.Store(common.KeyConfiguredDNS, common.Inconclusive("forward DNS not applicable for literal IP"))
 		return nil
 	}
 
 	r := resolverFor(customDnsServer, timeout)
 	addrs, err := r.LookupHost(lookupCtx, host)
 	if err != nil {
-		result.Store(&result.SystemDNS, common.Fail(err))
+		result.Store(common.KeyConfiguredDNS, common.Fail(err))
 		return err
 	}
 
-	result.Store(&result.SystemDNS, common.OK(formatAddrs(addrs)))
+	result.Store(common.KeyConfiguredDNS, common.OK(formatAddrs(addrs)))
 	return nil
 }
 
@@ -71,14 +71,14 @@ func Records(ctx context.Context, addr common.Address, customDNS string, doh boo
 	if ip := net.ParseIP(host); ip != nil {
 		names, err := net.DefaultResolver.LookupAddr(lookupCtx, host)
 		if err != nil {
-			result.Store(&result.Records, common.Fail(err))
+			result.Store(common.KeyRecords, common.Fail(err))
 			return err
 		}
 		for i := range names {
 			names[i] = strings.TrimSuffix(names[i], ".")
 		}
 		sort.Strings(names)
-		result.Store(&result.Records, common.OK("PTR="+strings.Join(uniqueSorted(names), ",")))
+		result.Store(common.KeyRecords, common.OK("PTR="+strings.Join(uniqueSorted(names), ",")))
 		return nil
 	}
 
@@ -87,10 +87,10 @@ func Records(ctx context.Context, addr common.Address, customDNS string, doh boo
 		// Prefer DoH for A/AAAA; other types still use system unless custom DNS set.
 		addrs, err := lookupDoH(lookupCtx, dohURL, host, "", timeout, dohFormat)
 		if err != nil {
-			result.Store(&result.Records, common.Fail(err))
+			result.Store(common.KeyRecords, common.Fail(err))
 			return err
 		}
-		result.Store(&result.Records, common.OK(formatAddrs(addrs)+" (DoH A/AAAA)"))
+		result.Store(common.KeyRecords, common.OK(formatAddrs(addrs)+" (DoH A/AAAA)"))
 		return nil
 	}
 
@@ -207,17 +207,17 @@ func Records(ctx context.Context, addr common.Address, customDNS string, doh boo
 		if len(errs) > 0 {
 			err = fmt.Errorf("%w (%v)", err, errs)
 		}
-		result.Store(&result.Records, common.Fail(err))
+		result.Store(common.KeyRecords, common.Fail(err))
 		return err
 	}
 	sort.Strings(parts)
 	content := strings.Join(parts, "; ")
 	if len(errs) > 0 {
 		content += fmt.Sprintf(" (partial; %d lookup errors)", len(errs))
-		result.Store(&result.Records, common.Warn(content))
+		result.Store(common.KeyRecords, common.Warn(content))
 		return nil
 	}
-	result.Store(&result.Records, common.OK(content))
+	result.Store(common.KeyRecords, common.OK(content))
 	return nil
 }
 

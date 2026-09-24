@@ -43,10 +43,10 @@ func TestLookupDoHJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.DNS.Status != "ok" {
-		t.Fatalf("%+v", result.DNS)
+	if result.Get(common.KeyDNS).Status != "ok" {
+		t.Fatalf("%+v", result.Get(common.KeyDNS))
 	}
-	if got := result.DNS.Content; got == "" {
+	if got := result.Get(common.KeyDNS).Content; got == "" {
 		t.Fatal("empty doh content")
 	}
 }
@@ -129,11 +129,11 @@ func TestLookupDoHRFC8484(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.DNS.Status != common.StatusOK {
-		t.Fatalf("%+v", result.DNS)
+	if result.Get(common.KeyDNS).Status != common.StatusOK {
+		t.Fatalf("%+v", result.Get(common.KeyDNS))
 	}
-	if !strings.Contains(result.DNS.Content, "1.2.3.4") || !strings.Contains(result.DNS.Content, "2001:db8::1") {
-		t.Fatalf("content=%q", result.DNS.Content)
+	if !strings.Contains(result.Get(common.KeyDNS).Content, "1.2.3.4") || !strings.Contains(result.Get(common.KeyDNS).Content, "2001:db8::1") {
+		t.Fatalf("content=%q", result.Get(common.KeyDNS).Content)
 	}
 }
 

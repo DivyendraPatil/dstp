@@ -10,24 +10,24 @@ import (
 type CheckID string
 
 const (
-	CheckPing          CheckID = "ping"
-	CheckDNS           CheckID = "dns"
-	CheckConfiguredDNS CheckID = "configured_dns"
-	CheckRecords       CheckID = "records"
-	CheckMail          CheckID = "mail"
-	CheckDNSSEC        CheckID = "dnssec"
-	CheckRouting       CheckID = "routing"
-	CheckRDAP          CheckID = "rdap"
-	CheckTCP           CheckID = "tcp"
-	CheckUDP           CheckID = "udp"
-	CheckTLS           CheckID = "tls"
-	CheckHTTP          CheckID = "http"
-	CheckHTTPS         CheckID = "https"
-	CheckHTTP3         CheckID = "http3"
-	CheckCDN           CheckID = "cdn"
-	CheckTraceroute    CheckID = "traceroute"
-	CheckWhois         CheckID = "whois"
-	CheckMTU           CheckID = "mtu"
+	CheckPing          CheckID = common.KeyPing
+	CheckDNS           CheckID = common.KeyDNS
+	CheckConfiguredDNS CheckID = common.KeyConfiguredDNS
+	CheckRecords       CheckID = common.KeyRecords
+	CheckMail          CheckID = common.KeyMail
+	CheckDNSSEC        CheckID = common.KeyDNSSEC
+	CheckRouting       CheckID = common.KeyRouting
+	CheckRDAP          CheckID = common.KeyRDAP
+	CheckTCP           CheckID = common.KeyTCP
+	CheckUDP           CheckID = common.KeyUDP
+	CheckTLS           CheckID = common.KeyTLS
+	CheckHTTP          CheckID = common.KeyHTTP
+	CheckHTTPS         CheckID = common.KeyHTTPS
+	CheckHTTP3         CheckID = common.KeyHTTP3
+	CheckCDN           CheckID = common.KeyCDN
+	CheckTraceroute    CheckID = common.KeyTraceroute
+	CheckWhois         CheckID = common.KeyWhois
+	CheckMTU           CheckID = common.KeyMTU
 )
 
 // CheckMeta describes a registered check.
@@ -39,26 +39,26 @@ type CheckMeta struct {
 	Extra   bool // only when --extra
 }
 
-// Registry is the canonical ordered list of checks.
+// Registry is the canonical ordered list of checks (labels/Extra beyond common.PartOrder).
 var Registry = []CheckMeta{
-	{ID: CheckPing, Label: "Ping", JSONKey: "ping"},
-	{ID: CheckDNS, Label: "DNS", JSONKey: "dns"},
-	{ID: CheckConfiguredDNS, Label: "ConfiguredDNS", JSONKey: "configured_dns", Aliases: []string{"system_dns"}},
-	{ID: CheckRecords, Label: "Records", JSONKey: "records"},
-	{ID: CheckMail, Label: "Mail", JSONKey: "mail"},
-	{ID: CheckDNSSEC, Label: "DNSSEC", JSONKey: "dnssec"},
-	{ID: CheckRouting, Label: "Routing", JSONKey: "routing"},
-	{ID: CheckRDAP, Label: "RDAP", JSONKey: "rdap"},
-	{ID: CheckTCP, Label: "TCP", JSONKey: "tcp"},
-	{ID: CheckUDP, Label: "UDP", JSONKey: "udp"},
-	{ID: CheckTLS, Label: "TLS", JSONKey: "tls"},
-	{ID: CheckHTTP, Label: "HTTP", JSONKey: "http"},
-	{ID: CheckHTTPS, Label: "HTTPS", JSONKey: "https"},
-	{ID: CheckHTTP3, Label: "HTTP3", JSONKey: "http3"},
-	{ID: CheckCDN, Label: "CDN", JSONKey: "cdn"},
-	{ID: CheckTraceroute, Label: "Traceroute", JSONKey: "traceroute", Extra: true},
-	{ID: CheckWhois, Label: "Whois", JSONKey: "whois", Extra: true},
-	{ID: CheckMTU, Label: "MTU", JSONKey: "mtu", Extra: true},
+	{ID: CheckPing, Label: "Ping", JSONKey: common.KeyPing},
+	{ID: CheckDNS, Label: "DNS", JSONKey: common.KeyDNS},
+	{ID: CheckConfiguredDNS, Label: "ConfiguredDNS", JSONKey: common.KeyConfiguredDNS, Aliases: []string{"system_dns"}},
+	{ID: CheckRecords, Label: "Records", JSONKey: common.KeyRecords},
+	{ID: CheckMail, Label: "Mail", JSONKey: common.KeyMail},
+	{ID: CheckDNSSEC, Label: "DNSSEC", JSONKey: common.KeyDNSSEC},
+	{ID: CheckRouting, Label: "Routing", JSONKey: common.KeyRouting},
+	{ID: CheckRDAP, Label: "RDAP", JSONKey: common.KeyRDAP},
+	{ID: CheckTCP, Label: "TCP", JSONKey: common.KeyTCP},
+	{ID: CheckUDP, Label: "UDP", JSONKey: common.KeyUDP},
+	{ID: CheckTLS, Label: "TLS", JSONKey: common.KeyTLS},
+	{ID: CheckHTTP, Label: "HTTP", JSONKey: common.KeyHTTP},
+	{ID: CheckHTTPS, Label: "HTTPS", JSONKey: common.KeyHTTPS},
+	{ID: CheckHTTP3, Label: "HTTP3", JSONKey: common.KeyHTTP3},
+	{ID: CheckCDN, Label: "CDN", JSONKey: common.KeyCDN},
+	{ID: CheckTraceroute, Label: "Traceroute", JSONKey: common.KeyTraceroute, Extra: true},
+	{ID: CheckWhois, Label: "Whois", JSONKey: common.KeyWhois, Extra: true},
+	{ID: CheckMTU, Label: "MTU", JSONKey: common.KeyMTU, Extra: true},
 }
 
 // CheckIDs returns canonical check IDs for CLI completions and validation.
@@ -86,87 +86,9 @@ func lookupMeta(id string) (CheckMeta, bool) {
 }
 
 func setByID(r *common.Result, id CheckID, part common.ResultPart) {
-	switch id {
-	case CheckPing:
-		r.Store(&r.Ping, part)
-	case CheckDNS:
-		r.Store(&r.DNS, part)
-	case CheckConfiguredDNS:
-		r.Store(&r.SystemDNS, part)
-	case CheckRecords:
-		r.Store(&r.Records, part)
-	case CheckMail:
-		r.Store(&r.Mail, part)
-	case CheckDNSSEC:
-		r.Store(&r.DNSSEC, part)
-	case CheckRouting:
-		r.Store(&r.Routing, part)
-	case CheckRDAP:
-		r.Store(&r.RDAP, part)
-	case CheckTCP:
-		r.Store(&r.TCP, part)
-	case CheckUDP:
-		r.Store(&r.UDP, part)
-	case CheckTLS:
-		r.Store(&r.TLS, part)
-	case CheckHTTP:
-		r.Store(&r.HTTP, part)
-	case CheckHTTPS:
-		r.Store(&r.HTTPS, part)
-	case CheckHTTP3:
-		r.Store(&r.HTTP3, part)
-	case CheckCDN:
-		r.Store(&r.CDN, part)
-	case CheckTraceroute:
-		r.Store(&r.Traceroute, part)
-	case CheckWhois:
-		r.Store(&r.Whois, part)
-	case CheckMTU:
-		r.Store(&r.MTU, part)
-	}
+	r.Store(string(id), part)
 }
 
 func getByID(r *common.Result, id CheckID) common.ResultPart {
-	r.Mu.Lock()
-	defer r.Mu.Unlock()
-	switch id {
-	case CheckPing:
-		return r.Ping
-	case CheckDNS:
-		return r.DNS
-	case CheckConfiguredDNS:
-		return r.SystemDNS
-	case CheckRecords:
-		return r.Records
-	case CheckMail:
-		return r.Mail
-	case CheckDNSSEC:
-		return r.DNSSEC
-	case CheckRouting:
-		return r.Routing
-	case CheckRDAP:
-		return r.RDAP
-	case CheckTCP:
-		return r.TCP
-	case CheckUDP:
-		return r.UDP
-	case CheckTLS:
-		return r.TLS
-	case CheckHTTP:
-		return r.HTTP
-	case CheckHTTPS:
-		return r.HTTPS
-	case CheckHTTP3:
-		return r.HTTP3
-	case CheckCDN:
-		return r.CDN
-	case CheckTraceroute:
-		return r.Traceroute
-	case CheckWhois:
-		return r.Whois
-	case CheckMTU:
-		return r.MTU
-	default:
-		return common.ResultPart{}
-	}
+	return r.Get(string(id))
 }

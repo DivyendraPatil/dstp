@@ -8,10 +8,9 @@ import (
 )
 
 func TestResultOutputJSONIncludesErrors(t *testing.T) {
-	r := &Result{
-		Ping: OK("14ms"),
-		TLS:  Fail(errors.New("connection refused")),
-	}
+	r := &Result{}
+	r.Store(KeyPing, OK("14ms"))
+	r.Store(KeyTLS, Fail(errors.New("connection refused")))
 
 	out := r.Output("json")
 
@@ -30,10 +29,9 @@ func TestResultOutputJSONIncludesErrors(t *testing.T) {
 
 func TestResultOutputPlaintextIncludesErrors(t *testing.T) {
 	SetNoColor(true)
-	r := &Result{
-		HTTPS: Fail(errors.New("timeout")),
-		DNS:   OK("IPv4=1.2.3.4"),
-	}
+	r := &Result{}
+	r.Store(KeyHTTPS, Fail(errors.New("timeout")))
+	r.Store(KeyDNS, OK("IPv4=1.2.3.4"))
 
 	out := r.Output("plaintext")
 
@@ -46,11 +44,15 @@ func TestResultOutputPlaintextIncludesErrors(t *testing.T) {
 }
 
 func TestResultFailed(t *testing.T) {
-	r := &Result{Ping: OK("1ms"), TLS: Fail(errors.New("x"))}
+	r := &Result{}
+	r.Store(KeyPing, OK("1ms"))
+	r.Store(KeyTLS, Fail(errors.New("x")))
 	if !r.Failed() {
 		t.Fatal("expected Failed()")
 	}
-	r2 := &Result{Ping: OK("1ms"), TLS: Skipped()}
+	r2 := &Result{}
+	r2.Store(KeyPing, OK("1ms"))
+	r2.Store(KeyTLS, Skipped())
 	if r2.Failed() {
 		t.Fatal("skipped should not fail")
 	}
@@ -58,11 +60,10 @@ func TestResultFailed(t *testing.T) {
 
 func TestSkippedOmittedFromPlaintext(t *testing.T) {
 	SetNoColor(true)
-	r := &Result{
-		Ping: Skipped(),
-		TLS:  OK("valid until 2099-01-01"),
-		UDP:  NotApplicable("n/a: cdn"),
-	}
+	r := &Result{}
+	r.Store(KeyPing, Skipped())
+	r.Store(KeyTLS, OK("valid until 2099-01-01"))
+	r.Store(KeyUDP, NotApplicable("n/a: cdn"))
 	out := r.Output("plaintext")
 	if strings.Contains(out, "Ping:") || strings.Contains(out, "UDP:") {
 		t.Fatalf("skipped should be omitted:\n%s", out)
@@ -77,7 +78,8 @@ func TestSkippedOmittedFromPlaintext(t *testing.T) {
 }
 
 func TestJSONNetworkBlockAdditive(t *testing.T) {
-	r := &Result{Routing: OK("AS13335")}
+	r := &Result{}
+	r.Store(KeyRouting, OK("AS13335"))
 	r.StoreNetwork(map[string]any{"asn": map[string]any{"asn": 13335}, "rpki": map[string]any{"status": "valid"}})
 	out := r.Output("json")
 	var got map[string]any
@@ -93,5 +95,18 @@ func TestJSONNetworkBlockAdditive(t *testing.T) {
 	}
 	if netObj["asn"] == nil {
 		t.Fatalf("%v", netObj)
+	}
+}
+
+func TestKnownSkipNames(t *testing.T) {
+	known := KnownSkipNames()
+	if _, ok := known[KeyPing]; !ok {
+		t.Fatal("missing ping")
+	}
+	if _, ok := known["system_dns"]; !ok {
+		t.Fatal("missing system_dns alias")
+	}
+	if len(known) < len(PartOrder) {
+		t.Fatalf("known=%d parts=%d", len(known), len(PartOrder))
 	}
 }

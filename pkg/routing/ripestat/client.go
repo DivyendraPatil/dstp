@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -15,12 +14,12 @@ import (
 	"time"
 
 	"github.com/DivyendraPatil/dstp/pkg/routing"
+	"github.com/DivyendraPatil/dstp/pkg/routing/httpx"
 )
 
 const (
 	defaultBaseURL = "https://stat.ripe.net"
 	sourceApp      = "dstp"
-	maxBody        = 1 << 20
 )
 
 // Client looks up IP → ASN/prefix/RPKI via RIPEstat Data API.
@@ -33,18 +32,9 @@ type Client struct {
 // New returns a Client with sensible defaults.
 func New() *Client {
 	return &Client{
-		BaseURL: defaultBaseURL,
-		HTTPClient: &http.Client{
-			Timeout: 15 * time.Second,
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				MaxIdleConns:          4,
-				IdleConnTimeout:       30 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 10 * time.Second,
-			},
-		},
-		SourceApp: sourceApp,
+		BaseURL:    defaultBaseURL,
+		HTTPClient: httpx.NewClient(15 * time.Second),
+		SourceApp:  sourceApp,
 	}
 }
 
@@ -328,24 +318,13 @@ func inferRIR(desc, name string) string {
 }
 
 func getJSON(ctx context.Context, hc *http.Client, rawURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	body, status, err := httpx.GetLimited(ctx, hc, rawURL, "application/json",
+		"dstp/"+sourceApp+" (https://github.com/DivyendraPatil/dstp)", httpx.DefaultMaxBody)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "dstp/"+sourceApp+" (https://github.com/DivyendraPatil/dstp)")
-
-	resp, err := hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %s", resp.Status)
+	if status >= 400 {
+		return nil, fmt.Errorf("HTTP %d", status)
 	}
 	return body, nil
 }

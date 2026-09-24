@@ -17,12 +17,11 @@ import (
 
 	"github.com/DivyendraPatil/dstp/pkg/common"
 	"github.com/DivyendraPatil/dstp/pkg/routing"
-	"github.com/DivyendraPatil/dstp/pkg/routing/cymru"
 )
 
 const maxCmdOutput = 256 << 10
 
-func testTraceroute(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
+func (rn *Runner) testTraceroute(ctx context.Context, address common.Address, timeout time.Duration, result *common.Result) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -30,17 +29,17 @@ func testTraceroute(ctx context.Context, address common.Address, timeout time.Du
 	out, err := runCmd(ctx, args...)
 	if err != nil {
 		if out == "" {
-			result.Store(&result.Traceroute, common.Fail(err))
+			result.Store(common.KeyTraceroute, common.Fail(err))
 			return err
 		}
 		// Preserve exit error with truncated output
-		result.Store(&result.Traceroute, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
+		result.Store(common.KeyTraceroute, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
 		return err
 	}
 	lines := hopLines(out)
 	if len(lines) == 0 {
 		err := fmt.Errorf("empty traceroute hops")
-		result.Store(&result.Traceroute, common.Fail(err))
+		result.Store(common.KeyTraceroute, common.Fail(err))
 		return err
 	}
 
@@ -53,8 +52,8 @@ func testTraceroute(ctx context.Context, address common.Address, timeout time.Du
 		hops = append(hops, h)
 	}
 
-	// Best-effort ASN enrichment via Team Cymru DNS (public hops only).
-	enriched := routing.EnrichHops(ctx, hops, cymru.New(), 8)
+	// Best-effort ASN enrichment (default: Team Cymru DNS) for public hops.
+	enriched := routing.EnrichHops(ctx, hops, rn.hopASNProvider(), 8)
 	path := routing.CollapseObservedASNPath(enriched)
 	summary := routing.FormatHopSummary(enriched, path)
 	if summary == "" {
@@ -63,7 +62,7 @@ func testTraceroute(ctx context.Context, address common.Address, timeout time.Du
 			summary = fmt.Sprintf("%s … %s (%d hops)", lines[0], lines[len(lines)-1], len(lines))
 		}
 	}
-	result.Store(&result.Traceroute, common.OK(summary))
+	result.Store(common.KeyTraceroute, common.OK(summary))
 	return nil
 }
 
@@ -82,10 +81,10 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 			if rerr := testRDAP(ctx, address, result); rerr == nil {
 				return nil
 			}
-			result.Store(&result.Whois, common.Fail(err))
+			result.Store(common.KeyWhois, common.Fail(err))
 			return err
 		}
-		result.Store(&result.Whois, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
+		result.Store(common.KeyWhois, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
 		return err
 	}
 	org := extractWhoisField(out, []string{"OrgName", "org-name", "Organization", "Registrant Organization", "descr"})
@@ -110,10 +109,10 @@ func testWhois(ctx context.Context, address common.Address, timeout time.Duratio
 			return nil
 		}
 		err := fmt.Errorf("no whois data")
-		result.Store(&result.Whois, common.Fail(err))
+		result.Store(common.KeyWhois, common.Fail(err))
 		return err
 	}
-	result.Store(&result.Whois, common.OK(strings.Join(parts, "; ")))
+	result.Store(common.KeyWhois, common.OK(strings.Join(parts, "; ")))
 	return nil
 }
 
@@ -121,30 +120,30 @@ func testRDAP(ctx context.Context, address common.Address, result *common.Result
 	host := address.String()
 	if net.ParseIP(host) != nil {
 		err := fmt.Errorf("whois/rdap: IP RDAP not implemented; install whois")
-		result.Store(&result.Whois, common.Fail(err))
+		result.Store(common.KeyWhois, common.Fail(err))
 		return err
 	}
 	u := "https://rdap.org/domain/" + host
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		result.Store(&result.Whois, common.Fail(err))
+		result.Store(common.KeyWhois, common.Fail(err))
 		return err
 	}
 	req.Header.Set("Accept", "application/rdap+json, application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		result.Store(&result.Whois, common.Fail(fmt.Errorf("rdap: %w", err)))
+		result.Store(common.KeyWhois, common.Fail(fmt.Errorf("rdap: %w", err)))
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		result.Store(&result.Whois, common.Fail(err))
+		result.Store(common.KeyWhois, common.Fail(err))
 		return err
 	}
 	if resp.StatusCode >= 400 {
 		err := fmt.Errorf("rdap HTTP %s", resp.Status)
-		result.Store(&result.Whois, common.Fail(err))
+		result.Store(common.KeyWhois, common.Fail(err))
 		return err
 	}
 	// Prefer compact summary fields if present.
@@ -165,7 +164,7 @@ func testRDAP(ctx context.Context, address common.Address, result *common.Result
 	if len(parts) == 0 {
 		parts = append(parts, "rdap ok ("+truncate(s, 80)+")")
 	}
-	result.Store(&result.Whois, common.OK("rdap: "+strings.Join(parts, "; ")))
+	result.Store(common.KeyWhois, common.OK("rdap: "+strings.Join(parts, "; ")))
 	return nil
 }
 
@@ -193,10 +192,10 @@ func testMTU(ctx context.Context, address common.Address, timeout time.Duration,
 	}
 	if best == 0 {
 		err := fmt.Errorf("no DF ping size succeeded (may need privileges)")
-		result.Store(&result.MTU, common.Fail(err))
+		result.Store(common.KeyMTU, common.Fail(err))
 		return err
 	}
-	result.Store(&result.MTU, common.OK(fmt.Sprintf("path MTU >= %d (payload probe, overhead=%d)", best, overhead)))
+	result.Store(common.KeyMTU, common.OK(fmt.Sprintf("path MTU >= %d (payload probe, overhead=%d)", best, overhead)))
 	return nil
 }
 

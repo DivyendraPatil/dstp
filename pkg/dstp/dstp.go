@@ -12,6 +12,10 @@ import (
 	"github.com/DivyendraPatil/dstp/pkg/common"
 	"github.com/DivyendraPatil/dstp/pkg/lookup"
 	"github.com/DivyendraPatil/dstp/pkg/ping"
+	"github.com/DivyendraPatil/dstp/pkg/routing"
+	"github.com/DivyendraPatil/dstp/pkg/routing/cymru"
+	"github.com/DivyendraPatil/dstp/pkg/routing/rdap"
+	"github.com/DivyendraPatil/dstp/pkg/routing/ripestat"
 )
 
 // ErrChecksFailed is returned when one or more connectivity checks failed.
@@ -23,11 +27,36 @@ type Runner struct {
 	Stderr io.Writer
 	// PingFunc overrides the default ping implementation (tests).
 	PingFunc func(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error
+	// Optional injectable providers (defaults: RIPEstat, RDAP.org, Team Cymru DNS).
+	RoutingProvider routing.RoutingProvider
+	RDAPProvider    routing.RDAPProvider
+	HopASNProvider  routing.ASNProvider
 }
 
 // DefaultRunner writes to stdout/stderr.
 func DefaultRunner() *Runner {
 	return &Runner{Stdout: os.Stdout, Stderr: os.Stderr}
+}
+
+func (rn *Runner) routingProvider() routing.RoutingProvider {
+	if rn != nil && rn.RoutingProvider != nil {
+		return rn.RoutingProvider
+	}
+	return ripestat.New()
+}
+
+func (rn *Runner) rdapProvider() routing.RDAPProvider {
+	if rn != nil && rn.RDAPProvider != nil {
+		return rn.RDAPProvider
+	}
+	return rdap.New()
+}
+
+func (rn *Runner) hopASNProvider() routing.ASNProvider {
+	if rn != nil && rn.HopASNProvider != nil {
+		return rn.HopASNProvider
+	}
+	return cymru.New()
 }
 
 // Run executes selected checks and returns the aggregated result.
@@ -78,133 +107,99 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 		pingFn = ping.RunTest
 	}
 
-	type job struct {
-		meta CheckMeta
-		run  func()
-	}
-
-	jobs := []job{
-		{lookupMetaMust(CheckPing), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+	// One run func per CheckID — Registry drives Extra/skip/order.
+	runners := map[CheckID]func(context.Context){
+		CheckPing: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckPing))
 			_ = pingFn(jctx, common.Address(addr), cfg.PingCount, timeout, result)
-			progress.done(string(CheckPing), getByID(result, CheckPing))
-		}},
-		{lookupMetaMust(CheckDNS), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+		},
+		CheckDNS: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckDNS))
 			_ = lookup.Default(jctx, common.Address(addr), timeout, cfg.DoH, cfg.DoHURL, cfg.DoHBootstrap, lookup.DoHFormat(cfg.DoHFormat), result)
-			progress.done(string(CheckDNS), getByID(result, CheckDNS))
-		}},
-		{lookupMetaMust(CheckConfiguredDNS), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+		},
+		CheckConfiguredDNS: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckConfiguredDNS))
 			_ = lookup.Host(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
-			progress.done(string(CheckConfiguredDNS), getByID(result, CheckConfiguredDNS))
-		}},
-		{lookupMetaMust(CheckRecords), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+		},
+		CheckRecords: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckRecords))
 			_ = lookup.Records(jctx, common.Address(addr), cfg.CustomDnsServer, cfg.DoH, cfg.DoHURL, lookup.DoHFormat(cfg.DoHFormat), timeout, result)
-			progress.done(string(CheckRecords), getByID(result, CheckRecords))
-		}},
-		{lookupMetaMust(CheckMail), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+		},
+		CheckMail: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckMail))
 			_ = lookup.MailAuth(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
-			progress.done(string(CheckMail), getByID(result, CheckMail))
-		}},
-		{lookupMetaMust(CheckDNSSEC), func() {
-			jctx, cancel := context.WithTimeout(ctx, timeout)
+		},
+		CheckDNSSEC: func(jctx context.Context) {
+			jctx, cancel := context.WithTimeout(jctx, timeout)
 			defer cancel()
-			progress.start(string(CheckDNSSEC))
 			_ = lookup.DNSSEC(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
-			progress.done(string(CheckDNSSEC), getByID(result, CheckDNSSEC))
-		}},
-		{lookupMetaMust(CheckRouting), func() {
-			progress.start(string(CheckRouting))
-			_ = testRouting(ctx, common.Address(addr), timeout, result)
-			progress.done(string(CheckRouting), getByID(result, CheckRouting))
-		}},
-		{lookupMetaMust(CheckRDAP), func() {
-			progress.start(string(CheckRDAP))
-			_ = testRDAPCheck(ctx, common.Address(addr), timeout, result)
-			progress.done(string(CheckRDAP), getByID(result, CheckRDAP))
-		}},
-		{lookupMetaMust(CheckTCP), func() {
-			progress.start(string(CheckTCP))
-			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, result)
-			progress.done(string(CheckTCP), getByID(result, CheckTCP))
-		}},
-		{lookupMetaMust(CheckUDP), func() {
-			progress.start(string(CheckUDP))
-			_ = testUDPSmart(ctx, common.Address(addr), udpPort, cfg.CustomDnsServer, timeout, result)
-			progress.done(string(CheckUDP), getByID(result, CheckUDP))
-		}},
-		{lookupMetaMust(CheckTLS), func() {
-			progress.start(string(CheckTLS))
-			_ = testTLS(ctx, common.Address(addr), port, timeout, cfg.Insecure, result)
-			progress.done(string(CheckTLS), getByID(result, CheckTLS))
-		}},
-		{lookupMetaMust(CheckHTTP), func() {
-			progress.start(string(CheckHTTP))
-			_ = testHTTP(ctx, target, httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, result)
-			progress.done(string(CheckHTTP), getByID(result, CheckHTTP))
-		}},
-		{lookupMetaMust(CheckHTTPS), func() {
-			progress.start(string(CheckHTTPS))
-			_ = testHTTPS(ctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, result)
-			progress.done(string(CheckHTTPS), getByID(result, CheckHTTPS))
-		}},
-		{lookupMetaMust(CheckHTTP3), func() {
-			progress.start(string(CheckHTTP3))
-			_ = testHTTP3(ctx, target, port, timeout, cfg.HTTPMethod, cfg.Insecure, result)
-			progress.done(string(CheckHTTP3), getByID(result, CheckHTTP3))
-		}},
-		{lookupMetaMust(CheckCDN), func() {
-			progress.start(string(CheckCDN))
-			_ = testCDN(ctx, target, port, timeout, cfg.Insecure, result)
-			progress.done(string(CheckCDN), getByID(result, CheckCDN))
-		}},
-		{lookupMetaMust(CheckTraceroute), func() {
-			progress.start(string(CheckTraceroute))
-			_ = testTraceroute(ctx, common.Address(addr), timeout, result)
-			progress.done(string(CheckTraceroute), getByID(result, CheckTraceroute))
-		}},
-		{lookupMetaMust(CheckWhois), func() {
-			progress.start(string(CheckWhois))
-			_ = testWhois(ctx, common.Address(addr), timeout, result)
-			progress.done(string(CheckWhois), getByID(result, CheckWhois))
-		}},
-		{lookupMetaMust(CheckMTU), func() {
-			progress.start(string(CheckMTU))
-			_ = testMTU(ctx, common.Address(addr), timeout, result)
-			progress.done(string(CheckMTU), getByID(result, CheckMTU))
-		}},
+		},
+		CheckRouting: func(jctx context.Context) {
+			_ = rn.testRouting(jctx, common.Address(addr), timeout, result)
+		},
+		CheckRDAP: func(jctx context.Context) {
+			_ = rn.testRDAPCheck(jctx, common.Address(addr), timeout, result)
+		},
+		CheckTCP: func(jctx context.Context) {
+			_ = testTCP(jctx, common.Address(addr), tcpPort, timeout, result)
+		},
+		CheckUDP: func(jctx context.Context) {
+			_ = testUDPSmart(jctx, common.Address(addr), udpPort, cfg.CustomDnsServer, timeout, result)
+		},
+		CheckTLS: func(jctx context.Context) {
+			_ = testTLS(jctx, common.Address(addr), port, timeout, cfg.Insecure, result)
+		},
+		CheckHTTP: func(jctx context.Context) {
+			_ = testHTTP(jctx, target, httpPort, timeout, cfg.HTTPMethod, cfg.FollowRedirects, result)
+		},
+		CheckHTTPS: func(jctx context.Context) {
+			_ = testHTTPS(jctx, target, port, timeout, cfg.HTTPMethod, cfg.FollowRedirects, cfg.Insecure, result)
+		},
+		CheckHTTP3: func(jctx context.Context) {
+			_ = testHTTP3(jctx, target, port, timeout, cfg.HTTPMethod, cfg.Insecure, result)
+		},
+		CheckCDN: func(jctx context.Context) {
+			_ = testCDN(jctx, target, port, timeout, cfg.Insecure, result)
+		},
+		CheckTraceroute: func(jctx context.Context) {
+			_ = rn.testTraceroute(jctx, common.Address(addr), timeout, result)
+		},
+		CheckWhois: func(jctx context.Context) {
+			_ = testWhois(jctx, common.Address(addr), timeout, result)
+		},
+		CheckMTU: func(jctx context.Context) {
+			_ = testMTU(jctx, common.Address(addr), timeout, result)
+		},
 	}
 
 	var wg sync.WaitGroup
-	for _, j := range jobs {
-		j := j
-		if j.meta.Extra && !cfg.Extra {
+	for _, meta := range Registry {
+		run, ok := runners[meta.ID]
+		if !ok {
 			continue
 		}
-		if j.meta.ID == CheckConfiguredDNS && skipConfiguredDup {
+		if meta.Extra && !cfg.Extra {
 			continue
 		}
-		if shouldSkip(cfg, string(j.meta.ID)) {
-			setByID(result, j.meta.ID, common.Skipped())
+		if meta.ID == CheckConfiguredDNS && skipConfiguredDup {
+			continue
+		}
+		if shouldSkip(cfg, string(meta.ID)) {
+			setByID(result, meta.ID, common.Skipped())
 			continue
 		}
 		wg.Add(1)
+		meta, run := meta, run
 		go func() {
 			defer wg.Done()
-			j.run()
+			progress.start(string(meta.ID))
+			run(ctx)
+			progress.done(string(meta.ID), getByID(result, meta.ID))
 		}()
 	}
 	wg.Wait()
@@ -247,14 +242,6 @@ func RunAllTests(ctx context.Context, cfg config.Config) error {
 	result, err := rn.Run(ctx, cfg)
 	rn.Render(cfg, result)
 	return err
-}
-
-func lookupMetaMust(id CheckID) CheckMeta {
-	m, ok := lookupMeta(string(id))
-	if !ok {
-		return CheckMeta{ID: id, Label: string(id), JSONKey: string(id)}
-	}
-	return m
 }
 
 func shouldSkip(cfg config.Config, name string) bool {

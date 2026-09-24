@@ -33,10 +33,10 @@ func runPing(ctx context.Context, addr common.Address, count int, timeout time.D
 			output = common.OK(out.Content)
 		} else {
 			output = common.Fail(errors.Join(fmt.Errorf("failed to create pinger: %w", err), ferr))
-			result.Store(&result.Ping, output)
+			result.Store(common.KeyPing, output)
 			return output.Error
 		}
-		result.Store(&result.Ping, output)
+		result.Store(common.KeyPing, output)
 		return nil
 	}
 
@@ -56,7 +56,7 @@ func runPing(ctx context.Context, addr common.Address, count int, timeout time.D
 			output = common.OK(out.Content)
 		} else {
 			output = common.Fail(errors.Join(fmt.Errorf("failed to run ping: %w", err), ferr))
-			result.Store(&result.Ping, output)
+			result.Store(common.KeyPing, output)
 			return output.Error
 		}
 	} else {
@@ -98,7 +98,7 @@ func runPing(ctx context.Context, addr common.Address, count int, timeout time.D
 		}
 	}
 
-	result.Store(&result.Ping, output)
+	result.Store(common.KeyPing, output)
 	return output.Error
 }
 

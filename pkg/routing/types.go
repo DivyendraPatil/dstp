@@ -51,6 +51,14 @@ type RoutingInfo struct {
 	Source string     `json:"source,omitempty"`
 }
 
+// NetworkReport is the additive JSON "network" object. Primary fields match
+// RoutingInfo; Also/Note cover dual-stack when v4 and v6 origins differ.
+type NetworkReport struct {
+	RoutingInfo
+	Also *RoutingInfo `json:"also,omitempty"`
+	Note string       `json:"note,omitempty"`
+}
+
 // RDAPInfo is normalized registration data (IP or domain).
 type RDAPInfo struct {
 	Kind         string     `json:"kind"` // ip | domain

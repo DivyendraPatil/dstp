@@ -16,7 +16,7 @@ func TestRunnerWithFakePing(t *testing.T) {
 		Stdout: &buf,
 		Stderr: ioDiscard{},
 		PingFunc: func(ctx context.Context, addr common.Address, count int, timeout time.Duration, result *common.Result) error {
-			result.Store(&result.Ping, common.OK("avg=1ms fake"))
+			result.Store(common.KeyPing, common.OK("avg=1ms fake"))
 			return nil
 		},
 	}
@@ -32,8 +32,8 @@ func TestRunnerWithFakePing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Ping.Status != common.StatusOK || result.Ping.Content != "avg=1ms fake" {
-		t.Fatalf("%+v", result.Ping)
+	if result.Get(common.KeyPing).Status != common.StatusOK || result.Get(common.KeyPing).Content != "avg=1ms fake" {
+		t.Fatalf("%+v", result.Get(common.KeyPing))
 	}
 	rn.Render(cfg, result)
 	if !bytes.Contains(buf.Bytes(), []byte("avg=1ms fake")) {
@@ -60,6 +60,20 @@ func TestCheckIDsComplete(t *testing.T) {
 	}
 	if !isExtraCheck("traceroute") || isExtraCheck("routing") || isExtraCheck("ping") {
 		t.Fatal("extra meta")
+	}
+}
+
+func TestRegistryMatchesPartOrder(t *testing.T) {
+	if len(Registry) != len(common.PartOrder) {
+		t.Fatalf("Registry=%d PartOrder=%d", len(Registry), len(common.PartOrder))
+	}
+	for i, m := range Registry {
+		if m.JSONKey != common.PartOrder[i].Key || string(m.ID) != common.PartOrder[i].Key {
+			t.Fatalf("[%d] registry=%s/%s part=%s", i, m.ID, m.JSONKey, common.PartOrder[i].Key)
+		}
+		if m.Label != common.PartOrder[i].Name {
+			t.Fatalf("[%d] label %q vs %q", i, m.Label, common.PartOrder[i].Name)
+		}
 	}
 }
 

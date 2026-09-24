@@ -33,13 +33,13 @@ func testTCP(ctx context.Context, address common.Address, port string, timeout t
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(string(address), port))
 	if err != nil {
-		result.Store(&result.TCP, common.Fail(err))
+		result.Store(common.KeyTCP, common.Fail(err))
 		return err
 	}
 	_ = conn.Close()
 
 	msg := fmt.Sprintf("connected to %s in %s", net.JoinHostPort(string(address), port), time.Since(start).Round(time.Millisecond))
-	result.Store(&result.TCP, common.OK(msg))
+	result.Store(common.KeyTCP, common.OK(msg))
 	return nil
 }
 
@@ -51,7 +51,7 @@ func testUDP(ctx context.Context, address common.Address, port string, timeout t
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", net.JoinHostPort(string(address), port))
 	if err != nil {
-		result.Store(&result.UDP, common.Fail(err))
+		result.Store(common.KeyUDP, common.Fail(err))
 		return err
 	}
 	defer func() { _ = conn.Close() }()
@@ -70,7 +70,7 @@ func testUDP(ctx context.Context, address common.Address, port string, timeout t
 		}
 	}
 	if _, err := conn.Write(payload); err != nil {
-		result.Store(&result.UDP, common.Fail(fmt.Errorf("udp write: %w", err)))
+		result.Store(common.KeyUDP, common.Fail(fmt.Errorf("udp write: %w", err)))
 		return err
 	}
 
@@ -80,21 +80,21 @@ func testUDP(ctx context.Context, address common.Address, port string, timeout t
 	target := net.JoinHostPort(string(address), port)
 
 	if rerr == nil {
-		result.Store(&result.UDP, common.OK(fmt.Sprintf("udp %s replied %dB in %s", target, n, elapsed)))
+		result.Store(common.KeyUDP, common.OK(fmt.Sprintf("udp %s replied %dB in %s", target, n, elapsed)))
 		return nil
 	}
 
 	var netErr net.Error
 	switch {
 	case errors.As(rerr, &netErr) && netErr.Timeout():
-		result.Store(&result.UDP, common.Inconclusive(fmt.Sprintf("udp %s: no reply within %s (inconclusive)", target, elapsed)))
+		result.Store(common.KeyUDP, common.Inconclusive(fmt.Sprintf("udp %s: no reply within %s (inconclusive)", target, elapsed)))
 		return nil
 	case errors.Is(rerr, context.Canceled), errors.Is(rerr, context.DeadlineExceeded):
-		result.Store(&result.UDP, common.Fail(rerr))
+		result.Store(common.KeyUDP, common.Fail(rerr))
 		return rerr
 	default:
 		// ECONNREFUSED / network unreachable = peer/path problem
-		result.Store(&result.UDP, common.Fail(fmt.Errorf("udp %s: %w", target, rerr)))
+		result.Store(common.KeyUDP, common.Fail(fmt.Errorf("udp %s: %w", target, rerr)))
 		return rerr
 	}
 }
@@ -106,7 +106,7 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 	dialer := &net.Dialer{}
 	rawConn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(string(address), port))
 	if err != nil {
-		result.Store(&result.TLS, common.Fail(err))
+		result.Store(common.KeyTLS, common.Fail(err))
 		return err
 	}
 
@@ -124,7 +124,7 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 	conn := tls.Client(rawConn, cfg)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		_ = rawConn.Close()
-		result.Store(&result.TLS, common.Fail(err))
+		result.Store(common.KeyTLS, common.Fail(err))
 		return err
 	}
 	defer func() { _ = conn.Close() }()
@@ -132,7 +132,7 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		err := fmt.Errorf("no peer certificates")
-		result.Store(&result.TLS, common.Fail(err))
+		result.Store(common.KeyTLS, common.Fail(err))
 		return err
 	}
 
@@ -140,12 +140,12 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 	now := time.Now()
 	if now.Before(cert.NotBefore) {
 		part := common.Fail(fmt.Errorf("certificate not yet valid (NotBefore=%s)", cert.NotBefore.Format(time.RFC3339)))
-		result.Store(&result.TLS, part)
+		result.Store(common.KeyTLS, part)
 		return part.Error
 	}
 	if now.After(cert.NotAfter) {
 		part := common.Fail(fmt.Errorf("certificate expired (NotAfter=%s)", cert.NotAfter.Format(time.RFC3339)))
-		result.Store(&result.TLS, part)
+		result.Store(common.KeyTLS, part)
 		return part.Error
 	}
 
@@ -198,10 +198,10 @@ func testTLS(ctx context.Context, address common.Address, port string, timeout t
 
 	content := strings.Join(parts, "; ")
 	if until <= 30*24*time.Hour {
-		result.Store(&result.TLS, common.Warn(content))
+		result.Store(common.KeyTLS, common.Warn(content))
 		return nil
 	}
-	result.Store(&result.TLS, common.OK(content))
+	result.Store(common.KeyTLS, common.OK(content))
 	return nil
 }
 
@@ -255,14 +255,14 @@ func tlsVersion(v uint16) string {
 }
 
 func testHTTPS(ctx context.Context, target Target, port string, timeout time.Duration, method string, followRedirects, insecure bool, result *common.Result) error {
-	return testHTTPScheme(ctx, "https", target, port, timeout, method, followRedirects, insecure, &result.HTTPS, result)
+	return testHTTPScheme(ctx, "https", target, port, timeout, method, followRedirects, insecure, common.KeyHTTPS, result)
 }
 
 func testHTTP(ctx context.Context, target Target, port string, timeout time.Duration, method string, followRedirects bool, result *common.Result) error {
-	return testHTTPScheme(ctx, "http", target, port, timeout, method, followRedirects, false, &result.HTTP, result)
+	return testHTTPScheme(ctx, "http", target, port, timeout, method, followRedirects, false, common.KeyHTTP, result)
 }
 
-func testHTTPScheme(ctx context.Context, scheme string, target Target, port string, timeout time.Duration, method string, followRedirects, insecure bool, dst *common.ResultPart, result *common.Result) error {
+func testHTTPScheme(ctx context.Context, scheme string, target Target, port string, timeout time.Duration, method string, followRedirects, insecure bool, key string, result *common.Result) error {
 	ctx, cancel := withCheckTimeout(ctx, timeout)
 	defer cancel()
 
@@ -279,7 +279,7 @@ func testHTTPScheme(ctx context.Context, scheme string, target Target, port stri
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
-		result.Store(dst, common.Fail(err))
+		result.Store(key, common.Fail(err))
 		return err
 	}
 
@@ -308,12 +308,12 @@ func testHTTPScheme(ctx context.Context, scheme string, target Target, port stri
 	resp, err := client.Do(req)
 	ttfb := time.Since(start)
 	if err != nil {
-		result.Store(dst, common.Fail(err))
+		result.Store(key, common.Fail(err))
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)); err != nil {
-		result.Store(dst, common.Fail(fmt.Errorf("read body: %w", err)))
+		result.Store(key, common.Fail(fmt.Errorf("read body: %w", err)))
 		return err
 	}
 
@@ -343,15 +343,30 @@ func testHTTPScheme(ctx context.Context, scheme string, target Target, port stri
 	switch {
 	case resp.StatusCode >= 500:
 		part := common.Fail(fmt.Errorf("%s", content))
-		result.Store(dst, part)
+		result.Store(key, part)
 		return part.Error
 	case resp.StatusCode >= 400:
-		result.Store(dst, common.Warn(content+" (application error)"))
+		result.Store(key, common.Warn(content+httpAppHint(resp)))
 		return nil
 	default:
-		result.Store(dst, common.OK(content))
+		result.Store(key, common.OK(content))
 		return nil
 	}
+}
+
+// httpAppHint annotates 4xx responses; Cloudflare/edge challenges get a clearer note.
+func httpAppHint(resp *http.Response) string {
+	if resp == nil {
+		return " (application error)"
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		cfRay := resp.Header.Get("cf-ray")
+		server := strings.ToLower(resp.Header.Get("Server"))
+		if cfRay != "" || strings.Contains(server, "cloudflare") {
+			return " (edge challenge/WAF; TLS OK)"
+		}
+	}
+	return " (application error)"
 }
 
 func buildURL(scheme, host, port, path, rawQuery string) string {

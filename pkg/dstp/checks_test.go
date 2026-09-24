@@ -52,8 +52,8 @@ func TestTCPLocal(t *testing.T) {
 	if err := testTCP(context.Background(), "127.0.0.1", port, 2*time.Second, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.TCP.Status != common.StatusOK {
-		t.Fatalf("%+v", result.TCP)
+	if result.Get(common.KeyTCP).Status != common.StatusOK {
+		t.Fatalf("%+v", result.Get(common.KeyTCP))
 	}
 }
 
@@ -73,10 +73,10 @@ func TestHTTPSLocal(t *testing.T) {
 	target := Target{Host: host, IsIP: true}
 	err = testHTTPS(context.Background(), target, port, 2*time.Second, "GET", false, true, &result)
 	if err != nil {
-		t.Fatalf("expected success with --insecure: %v (%+v)", err, result.HTTPS)
+		t.Fatalf("expected success with --insecure: %v (%+v)", err, result.Get(common.KeyHTTPS))
 	}
-	if result.HTTPS.Status != common.StatusOK {
-		t.Fatalf("status=%q content=%q", result.HTTPS.Status, result.HTTPS.Content)
+	if result.Get(common.KeyHTTPS).Status != common.StatusOK {
+		t.Fatalf("status=%q content=%q", result.Get(common.KeyHTTPS).Status, result.Get(common.KeyHTTPS).Content)
 	}
 }
 
@@ -91,8 +91,8 @@ func TestHTTPSUnauthorizedIsWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("4xx should not fail check: %v", err)
 	}
-	if result.HTTP.Status != common.StatusWarning {
-		t.Fatalf("got %+v", result.HTTP)
+	if result.Get(common.KeyHTTP).Status != common.StatusWarning {
+		t.Fatalf("got %+v", result.Get(common.KeyHTTP))
 	}
 }
 
@@ -121,10 +121,10 @@ func TestTLSLocalCertInsecureOK(t *testing.T) {
 	var result common.Result
 	err := testTLS(context.Background(), common.Address("127.0.0.1"), port, 2*time.Second, true, &result)
 	if err != nil {
-		t.Fatalf("insecure TLS: %v (%+v)", err, result.TLS)
+		t.Fatalf("insecure TLS: %v (%+v)", err, result.Get(common.KeyTLS))
 	}
-	if result.TLS.Status != common.StatusOK && result.TLS.Status != common.StatusWarning {
-		t.Fatalf("%+v", result.TLS)
+	if result.Get(common.KeyTLS).Status != common.StatusOK && result.Get(common.KeyTLS).Status != common.StatusWarning {
+		t.Fatalf("%+v", result.Get(common.KeyTLS))
 	}
 }
 
@@ -155,8 +155,8 @@ func TestTLSLocalCertRejectsUntrusted(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected untrusted cert failure without --insecure")
 	}
-	if result.TLS.Status != common.StatusError {
-		t.Fatalf("%+v", result.TLS)
+	if result.Get(common.KeyTLS).Status != common.StatusError {
+		t.Fatalf("%+v", result.Get(common.KeyTLS))
 	}
 }
 

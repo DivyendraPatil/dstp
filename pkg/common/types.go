@@ -71,35 +71,36 @@ func NotApplicable(msg string) ResultPart {
 	return ResultPart{Content: msg, Status: StatusSkipped}
 }
 
-// Result aggregates all connectivity checks. Field order here drives plaintext output order.
+// Result aggregates connectivity checks in a map keyed by PartOrder JSON keys.
+// Output order and known keys come from PartOrder — do not add per-check fields.
 type Result struct {
-	Ping       ResultPart `json:"ping"`
-	DNS        ResultPart `json:"dns"`
-	SystemDNS  ResultPart `json:"configured_dns"`
-	Records    ResultPart `json:"records"`
-	Mail       ResultPart `json:"mail"`
-	DNSSEC     ResultPart `json:"dnssec"`
-	Routing    ResultPart `json:"routing"`
-	RDAP       ResultPart `json:"rdap"`
-	TCP        ResultPart `json:"tcp"`
-	UDP        ResultPart `json:"udp"`
-	TLS        ResultPart `json:"tls"`
-	HTTP       ResultPart `json:"http"`
-	HTTPS      ResultPart `json:"https"`
-	HTTP3      ResultPart `json:"http3"`
-	CDN        ResultPart `json:"cdn"`
-	Traceroute ResultPart `json:"traceroute"`
-	Whois      ResultPart `json:"whois"`
-	MTU        ResultPart `json:"mtu"`
-	// Network is optional structured routing detail (additive JSON "network" object).
-	Network any        `json:"-"`
-	Mu      sync.Mutex `json:"-"`
+	Mu      sync.Mutex            `json:"-"`
+	byKey   map[string]ResultPart `json:"-"`
+	Network any                   `json:"-"`
 }
 
-func (r *Result) Store(dst *ResultPart, part ResultPart) {
+func (r *Result) ensure() {
+	if r.byKey == nil {
+		r.byKey = make(map[string]ResultPart, len(PartOrder))
+	}
+}
+
+// Store sets the outcome for a PartOrder key (e.g. KeyPing).
+func (r *Result) Store(key string, part ResultPart) {
 	r.Mu.Lock()
-	*dst = part
-	r.Mu.Unlock()
+	defer r.Mu.Unlock()
+	r.ensure()
+	r.byKey[key] = part
+}
+
+// Get returns the stored part for key, or a zero ResultPart.
+func (r *Result) Get(key string) ResultPart {
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	if r.byKey == nil {
+		return ResultPart{}
+	}
+	return r.byKey[key]
 }
 
 // StoreNetwork sets the optional structured network object for JSON output.
@@ -125,26 +126,17 @@ type namedPart struct {
 }
 
 func (r *Result) parts() []namedPart {
-	return []namedPart{
-		{"Ping", "ping", r.Ping},
-		{"DNS", "dns", r.DNS},
-		{"ConfiguredDNS", "configured_dns", r.SystemDNS},
-		{"Records", "records", r.Records},
-		{"Mail", "mail", r.Mail},
-		{"DNSSEC", "dnssec", r.DNSSEC},
-		{"Routing", "routing", r.Routing},
-		{"RDAP", "rdap", r.RDAP},
-		{"TCP", "tcp", r.TCP},
-		{"UDP", "udp", r.UDP},
-		{"TLS", "tls", r.TLS},
-		{"HTTP", "http", r.HTTP},
-		{"HTTPS", "https", r.HTTPS},
-		{"HTTP3", "http3", r.HTTP3},
-		{"CDN", "cdn", r.CDN},
-		{"Traceroute", "traceroute", r.Traceroute},
-		{"Whois", "whois", r.Whois},
-		{"MTU", "mtu", r.MTU},
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	out := make([]namedPart, 0, len(PartOrder))
+	for _, spec := range PartOrder {
+		var part ResultPart
+		if r.byKey != nil {
+			part = r.byKey[spec.Key]
+		}
+		out = append(out, namedPart{name: spec.Name, key: spec.Key, part: part})
 	}
+	return out
 }
 
 func (r *Result) Output(outputType string) string {

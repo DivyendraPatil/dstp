@@ -24,7 +24,7 @@ func MailAuth(ctx context.Context, addr common.Address, customDNS string, timeou
 
 	host := strings.TrimSuffix(addr.String(), ".")
 	if net.ParseIP(host) != nil {
-		result.Store(&result.Mail, common.NotApplicable("mail auth not applicable for literal IP"))
+		result.Store(common.KeyMail, common.NotApplicable("mail auth not applicable for literal IP"))
 		return nil
 	}
 
@@ -133,16 +133,16 @@ func MailAuth(ctx context.Context, addr common.Address, customDNS string, timeou
 	wg.Wait()
 	if len(parts) == 0 {
 		err := fmt.Errorf("mail auth: no data")
-		result.Store(&result.Mail, common.Fail(err))
+		result.Store(common.KeyMail, common.Fail(err))
 		return err
 	}
 	sortStrings(parts)
 	content := strings.Join(parts, "; ")
 	if warns > 0 {
-		result.Store(&result.Mail, common.Warn(content))
+		result.Store(common.KeyMail, common.Warn(content))
 		return nil
 	}
-	result.Store(&result.Mail, common.OK(content))
+	result.Store(common.KeyMail, common.OK(content))
 	return nil
 }
 

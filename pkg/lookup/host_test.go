@@ -16,7 +16,7 @@ func TestLookup(t *testing.T) {
 	if err != nil {
 		t.Skipf("live DNS unavailable: %v", err)
 	}
-	if result.SystemDNS.Content == "" {
+	if result.Get(common.KeyConfiguredDNS).Content == "" {
 		t.Fatal("empty System DNS content")
 	}
 }
@@ -27,7 +27,7 @@ func TestRecords(t *testing.T) {
 	if err != nil {
 		t.Skipf("live DNS unavailable: %v", err)
 	}
-	if result.Records.Content == "" && result.Records.Status != common.StatusWarning {
+	if result.Get(common.KeyRecords).Content == "" && result.Get(common.KeyRecords).Status != common.StatusWarning {
 		t.Fatal("expected records content")
 	}
 }

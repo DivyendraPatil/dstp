@@ -110,24 +110,20 @@ func sortStringsCI(in []string) {
 func testUDPSmart(ctx context.Context, address common.Address, port, customDNS string, timeout time.Duration, result *common.Result) error {
 	target := resolveUDPProbeTarget(ctx, address, port, customDNS, timeout)
 	if target.Skip {
-		result.Store(&result.UDP, common.NotApplicable(target.Reason))
+		result.Store(common.KeyUDP, common.NotApplicable(target.Reason))
 		return nil
 	}
 	err := testUDP(ctx, common.Address(target.Host), port, timeout, result)
-	if target.Note == "" || result.UDP.Status == common.StatusError {
+	part := result.Get(common.KeyUDP)
+	if target.Note == "" || part.Status == common.StatusError {
 		return err
 	}
 	// Annotate successful/inconclusive outcomes with retarget note.
-	result.Mu.Lock()
-	defer result.Mu.Unlock()
-	part := result.UDP
 	if part.Content != "" {
 		part.Content = part.Content + "; " + target.Note
-	} else if part.Error != nil {
-		// keep error
-	} else {
+	} else if part.Error == nil {
 		part.Content = target.Note
 	}
-	result.UDP = part
+	result.Store(common.KeyUDP, part)
 	return err
 }

@@ -53,7 +53,7 @@ func testHTTP3(ctx context.Context, target Target, port string, timeout time.Dur
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
-		result.Store(&result.HTTP3, common.Fail(err))
+		result.Store(common.KeyHTTP3, common.Fail(err))
 		return err
 	}
 
@@ -61,7 +61,7 @@ func testHTTP3(ctx context.Context, target Target, port string, timeout time.Dur
 	resp, err := client.Do(req)
 	ttfb := time.Since(start)
 	if err != nil {
-		result.Store(&result.HTTP3, common.Inconclusive(fmt.Sprintf("HTTP/3 unavailable: %v", err)))
+		result.Store(common.KeyHTTP3, common.Inconclusive(fmt.Sprintf("HTTP/3 unavailable: %v", err)))
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -81,13 +81,13 @@ func testHTTP3(ctx context.Context, target Target, port string, timeout time.Dur
 	switch {
 	case resp.StatusCode >= 500:
 		part := common.Fail(fmt.Errorf("%s", content))
-		result.Store(&result.HTTP3, part)
+		result.Store(common.KeyHTTP3, part)
 		return part.Error
 	case resp.StatusCode >= 400:
-		result.Store(&result.HTTP3, common.Warn(content+" (application error)"))
+		result.Store(common.KeyHTTP3, common.Warn(content+httpAppHint(resp)))
 		return nil
 	default:
-		result.Store(&result.HTTP3, common.OK(content))
+		result.Store(common.KeyHTTP3, common.OK(content))
 		return nil
 	}
 }

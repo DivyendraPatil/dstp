@@ -28,7 +28,7 @@ func DNSSEC(ctx context.Context, addr common.Address, customDNS string, timeout 
 
 	host := strings.TrimSuffix(addr.String(), ".")
 	if net.ParseIP(host) != nil {
-		result.Store(&result.DNSSEC, common.NotApplicable("CAA/DNSSEC not applicable for literal IP"))
+		result.Store(common.KeyDNSSEC, common.NotApplicable("CAA/DNSSEC not applicable for literal IP"))
 		return nil
 	}
 
@@ -116,14 +116,14 @@ func DNSSEC(ctx context.Context, addr common.Address, customDNS string, timeout 
 	sortStrings(parts)
 	content := strings.Join(parts, "; ")
 	if warns > 0 && warns == len(parts) {
-		result.Store(&result.DNSSEC, common.Warn(content))
+		result.Store(common.KeyDNSSEC, common.Warn(content))
 		return nil
 	}
 	if warns > 0 {
-		result.Store(&result.DNSSEC, common.Warn(content))
+		result.Store(common.KeyDNSSEC, common.Warn(content))
 		return nil
 	}
-	result.Store(&result.DNSSEC, common.OK(content))
+	result.Store(common.KeyDNSSEC, common.OK(content))
 	return nil
 }
 
