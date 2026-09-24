@@ -18,7 +18,7 @@ type RPKIProvider interface {
 // RoutingProvider returns combined routing intelligence for an IP.
 // Implementations should skip special-use addresses without calling remote APIs.
 type RoutingProvider interface {
-	LookupIP(ctx context.Context, ip netip.Addr) (RoutingInfo, error)
+	LookupRouting(ctx context.Context, ip netip.Addr) (RoutingInfo, error)
 }
 
 // RDAPProvider looks up IP or domain registration data.

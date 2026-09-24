@@ -23,7 +23,7 @@ const (
 	maxBody        = 1 << 20
 )
 
-// Client looks up IP → ASN/prefix via RIPEstat network-info + as-overview.
+// Client looks up IP → ASN/prefix/RPKI via RIPEstat Data API.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
@@ -48,7 +48,27 @@ func New() *Client {
 	}
 }
 
-var _ routing.ASNProvider = (*Client)(nil)
+var (
+	_ routing.ASNProvider     = (*Client)(nil)
+	_ routing.RPKIProvider    = (*Client)(nil)
+	_ routing.RoutingProvider = (*Client)(nil)
+)
+
+func (c *Client) endpoints() (base string, hc *http.Client, app string) {
+	base = c.BaseURL
+	if base == "" {
+		base = defaultBaseURL
+	}
+	hc = c.HTTPClient
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	app = c.SourceApp
+	if app == "" {
+		app = sourceApp
+	}
+	return base, hc, app
+}
 
 // LookupIP returns origin ASN and announced prefix for a public IP.
 // Special-use addresses return a zero ASNInfo and a descriptive error
@@ -64,19 +84,7 @@ func (c *Client) LookupIP(ctx context.Context, ip netip.Addr) (routing.ASNInfo, 
 		}, fmt.Errorf("special-use address (%s): not queried", routing.ClassifyAddr(ip))
 	}
 
-	base := c.BaseURL
-	if base == "" {
-		base = defaultBaseURL
-	}
-	hc := c.HTTPClient
-	if hc == nil {
-		hc = http.DefaultClient
-	}
-	app := c.SourceApp
-	if app == "" {
-		app = sourceApp
-	}
-
+	base, hc, app := c.endpoints()
 	ni, err := c.networkInfo(ctx, hc, base, app, ip)
 	if err != nil {
 		return routing.ASNInfo{IP: ip, Source: "ripestat"}, err
@@ -105,6 +113,136 @@ func (c *Client) LookupIP(ctx context.Context, ip netip.Addr) (routing.ASNInfo, 
 		info.Organization = holder
 		info.RIR = rir
 	}
+	return info, nil
+}
+
+// Validate checks RPKI origin validity for prefix + ASN via RIPEstat.
+// Transport/API failures return status unknown (never invalid).
+func (c *Client) Validate(ctx context.Context, prefix netip.Prefix, asn uint32) (routing.RPKIResult, error) {
+	out := routing.RPKIResult{
+		Prefix:    prefix,
+		OriginASN: asn,
+		Source:    "ripestat",
+		Status:    routing.RPKIUnknown,
+	}
+	if !prefix.IsValid() || asn == 0 {
+		out.Description = "missing prefix or ASN"
+		return out, fmt.Errorf("ripestat rpki: missing prefix or ASN")
+	}
+
+	base, hc, app := c.endpoints()
+	u, err := url.Parse(strings.TrimRight(base, "/") + "/data/rpki-validation/data.json")
+	if err != nil {
+		return out, err
+	}
+	q := u.Query()
+	q.Set("resource", strconv.FormatUint(uint64(asn), 10))
+	q.Set("prefix", prefix.String())
+	q.Set("sourceapp", app)
+	u.RawQuery = q.Encode()
+
+	body, err := getJSON(ctx, hc, u.String())
+	if err != nil {
+		out.Description = err.Error()
+		return out, err
+	}
+	var wrap struct {
+		Status string `json:"status"`
+		Data   struct {
+			Status         string `json:"status"`
+			Prefix         string `json:"prefix"`
+			Resource       string `json:"resource"`
+			ValidatingROAs []struct {
+				Origin    string `json:"origin"`
+				Prefix    string `json:"prefix"`
+				Validity  string `json:"validity"`
+				MaxLength int    `json:"max_length"`
+			} `json:"validating_roas"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrap); err != nil {
+		out.Description = "decode error"
+		return out, fmt.Errorf("ripestat rpki: decode: %w", err)
+	}
+	if wrap.Status != "ok" {
+		out.Description = "api status " + wrap.Status
+		return out, fmt.Errorf("ripestat rpki: status %q", wrap.Status)
+	}
+
+	st, detail := routing.MapRIPERPKIStatus(wrap.Data.Status)
+	out.Status = st
+	out.Detail = detail
+	out.Description = wrap.Data.Status
+	if p, perr := netip.ParsePrefix(wrap.Data.Prefix); perr == nil {
+		out.Prefix = p
+	}
+
+	// Prefer an ROA whose validity matches the overall status; else first ROA.
+	for i := range wrap.Data.ValidatingROAs {
+		roa := wrap.Data.ValidatingROAs[i]
+		if detail != "" && roa.Validity != detail && roa.Validity != wrap.Data.Status {
+			continue
+		}
+		matched := parseROA(roa.Origin, roa.Prefix, roa.MaxLength)
+		if matched != nil {
+			out.MatchedROA = matched
+			break
+		}
+	}
+	if out.MatchedROA == nil && len(wrap.Data.ValidatingROAs) > 0 {
+		roa := wrap.Data.ValidatingROAs[0]
+		out.MatchedROA = parseROA(roa.Origin, roa.Prefix, roa.MaxLength)
+	}
+	return out, nil
+}
+
+func parseROA(origin, prefix string, maxLen int) *routing.ROA {
+	asn64, err := strconv.ParseUint(strings.TrimSpace(origin), 10, 32)
+	if err != nil {
+		return nil
+	}
+	p, err := netip.ParsePrefix(strings.TrimSpace(prefix))
+	if err != nil {
+		return nil
+	}
+	return &routing.ROA{ASN: uint32(asn64), Prefix: p, MaxLength: maxLen}
+}
+
+// LookupRouting combines ASN/prefix lookup with RPKI validation.
+// ASN lookup failure fails the call; RPKI failure yields status unknown
+// and does not fail the overall result.
+func (c *Client) LookupRouting(ctx context.Context, ip netip.Addr) (routing.RoutingInfo, error) {
+	info := routing.RoutingInfo{IP: ip, Source: "ripestat"}
+	asn, err := c.LookupIP(ctx, ip)
+	if err != nil {
+		info.ASN = asn
+		info.RPKI = routing.RPKIResult{Status: routing.RPKIUnknown, Source: "ripestat", Description: "asn lookup failed"}
+		return info, err
+	}
+	info.ASN = asn
+
+	if !asn.Prefix.IsValid() || asn.ASN == 0 {
+		info.RPKI = routing.RPKIResult{
+			Status:      routing.RPKIUnknown,
+			Source:      "ripestat",
+			Description: "missing prefix or ASN for RPKI",
+		}
+		return info, nil
+	}
+
+	rpki, rerr := c.Validate(ctx, asn.Prefix, asn.ASN)
+	if rerr != nil {
+		// Provider unavailable → unknown, not invalid.
+		info.RPKI = routing.RPKIResult{
+			Status:      routing.RPKIUnknown,
+			Prefix:      asn.Prefix,
+			OriginASN:   asn.ASN,
+			Source:      "ripestat",
+			Description: rerr.Error(),
+		}
+		return info, nil
+	}
+	info.RPKI = rpki
 	return info, nil
 }
 
