@@ -16,6 +16,8 @@ import (
 	"unicode"
 
 	"github.com/DivyendraPatil/dstp/pkg/common"
+	"github.com/DivyendraPatil/dstp/pkg/routing"
+	"github.com/DivyendraPatil/dstp/pkg/routing/cymru"
 )
 
 const maxCmdOutput = 256 << 10
@@ -35,15 +37,31 @@ func testTraceroute(ctx context.Context, address common.Address, timeout time.Du
 		result.Store(&result.Traceroute, common.Fail(fmt.Errorf("%w; output: %s", err, truncate(out, 200))))
 		return err
 	}
-	hops := hopLines(out)
-	if len(hops) == 0 {
+	lines := hopLines(out)
+	if len(lines) == 0 {
 		err := fmt.Errorf("empty traceroute hops")
 		result.Store(&result.Traceroute, common.Fail(err))
 		return err
 	}
-	summary := hops[0]
-	if len(hops) > 1 {
-		summary = fmt.Sprintf("%s … %s (%d hops)", hops[0], hops[len(hops)-1], len(hops))
+
+	hops := make([]routing.HopASN, 0, len(lines))
+	for _, line := range lines {
+		h := routing.HopASN{
+			Hop:     routing.ParseHopNumber(line),
+			Address: routing.ParseHopAddress(line),
+		}
+		hops = append(hops, h)
+	}
+
+	// Best-effort ASN enrichment via Team Cymru DNS (public hops only).
+	enriched := routing.EnrichHops(ctx, hops, cymru.New(), 8)
+	path := routing.CollapseObservedASNPath(enriched)
+	summary := routing.FormatHopSummary(enriched, path)
+	if summary == "" {
+		summary = lines[0]
+		if len(lines) > 1 {
+			summary = fmt.Sprintf("%s … %s (%d hops)", lines[0], lines[len(lines)-1], len(lines))
+		}
 	}
 	result.Store(&result.Traceroute, common.OK(summary))
 	return nil
