@@ -60,8 +60,9 @@ jobs:
           CI: true
         run: go test -v -tags=integration ./pkg/dstp ./pkg/lookup
 
+      # Optional: set repo secret CODECOV_TOKEN to enable uploads. Coverage floor above is the gate.
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && secrets.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.out
