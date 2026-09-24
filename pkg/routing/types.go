@@ -34,7 +34,7 @@ type ROA struct {
 
 // RPKIResult is origin validation for a prefix + ASN pair.
 type RPKIResult struct {
-	Status      string       `json:"status"` // valid | invalid | not_found | unknown
+	Status      string       `json:"status"`           // valid | invalid | not_found | unknown
 	Detail      string       `json:"detail,omitempty"` // e.g. invalid_asn, invalid_length
 	Prefix      netip.Prefix `json:"prefix,omitempty"`
 	OriginASN   uint32       `json:"origin_asn,omitempty"`
@@ -70,14 +70,14 @@ type RDAPInfo struct {
 
 // PeeringInfo is optional PeeringDB enrichment for an ASN.
 type PeeringInfo struct {
-	ASN            uint32 `json:"asn"`
-	Name           string `json:"name,omitempty"`
-	Website        string `json:"website,omitempty"`
-	TrafficLevel   string `json:"traffic_level,omitempty"`
-	Policy         string `json:"policy,omitempty"`
-	IXCount        int    `json:"ix_count,omitempty"`
-	FacilityCount  int    `json:"facility_count,omitempty"`
-	Source         string `json:"source,omitempty"`
+	ASN           uint32 `json:"asn"`
+	Name          string `json:"name,omitempty"`
+	Website       string `json:"website,omitempty"`
+	TrafficLevel  string `json:"traffic_level,omitempty"`
+	Policy        string `json:"policy,omitempty"`
+	IXCount       int    `json:"ix_count,omitempty"`
+	FacilityCount int    `json:"facility_count,omitempty"`
+	Source        string `json:"source,omitempty"`
 }
 
 // HopASN annotates one traceroute hop for observed-path rendering.

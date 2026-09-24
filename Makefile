@@ -38,8 +38,9 @@ vuln:
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 release-check:
-	go run github.com/goreleaser/goreleaser/v2@latest check
-	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign,sbom
+	# Pin below current @latest: newer goreleaser modules require Go > go.mod toolchain.
+	go run github.com/goreleaser/goreleaser/v2@v2.12.7 check
+	go run github.com/goreleaser/goreleaser/v2@v2.12.7 release --snapshot --clean --skip=publish,sign,sbom
 
 vet:
 	go vet ./...

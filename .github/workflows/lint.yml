@@ -43,7 +43,18 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - name: GoReleaser check + snapshot
-        run: |
-          go run github.com/goreleaser/goreleaser/v2@latest check
+        uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
+        with:
+          version: "~> v2.12"
+          args: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
+        with:
+          version: "~> v2.12"
           # Skip SBOM (needs syft), sign (needs OIDC+cosign), and publish on CI smoke builds.
-          go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish,sign,sbom
+          args: release --snapshot --clean --skip=publish,sign,sbom
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

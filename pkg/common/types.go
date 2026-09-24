@@ -92,7 +92,7 @@ type Result struct {
 	Whois      ResultPart `json:"whois"`
 	MTU        ResultPart `json:"mtu"`
 	// Network is optional structured routing detail (additive JSON "network" object).
-	Network any `json:"-"`
+	Network any        `json:"-"`
 	Mu      sync.Mutex `json:"-"`
 }
 
