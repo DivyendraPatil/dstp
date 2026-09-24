@@ -50,7 +50,7 @@ type Config struct {
 	HTTPPort        string   `yaml:"http_port"`
 	Insecure        bool     `yaml:"insecure"`
 	Extra           bool     `yaml:"extra"`
-	Profile         string   `yaml:"profile"` // web|mail|dns|api|full (default web)
+	Profile         string   `yaml:"profile"` // web|mail|dns|api|network|full (default web)
 	ConfigPath      string   `yaml:"-"`
 	ExplicitConfig  bool     `yaml:"-"`
 }
@@ -82,7 +82,7 @@ Options:
 	-h, --help             Show help and exit.
 
 Profiles:
-	web     site/CDN checks; skips udp, mail, dnssec, routing (fixes :53 noise)
+	web     site/CDN checks; skips udp, mail, dnssec, routing, rdap
 	mail    SPF/DMARC/DKIM/BIMI + records/dnssec
 	dns     resolvers, records, DNSSEC, smarter UDP→NS
 	api     TCP/TLS/HTTPS/HTTP3/CDN (no cleartext HTTP)

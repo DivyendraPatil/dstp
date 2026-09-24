@@ -1,6 +1,6 @@
 # dstp
 
-Run networking checks against a host — ping, DNS, TCP/UDP, TLS, HTTP/HTTPS — in one command.
+Run networking checks against a host — ping, DNS, TCP/UDP, TLS, HTTP/HTTPS/HTTP3, CDN, mail auth, DNSSEC, and (with `--profile network`) ASN/RPKI/RDAP + traceroute — in one command.
 
 ```bash
 GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
@@ -21,7 +21,9 @@ Requires **Go 1.26.0+** (CI/toolchain uses **1.26.6**).
 
 ```bash
 GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@latest
-	# or from a clone (embeds version/commit/date):
+# pin a release:
+GOBIN="$(go env GOPATH)/bin" go install github.com/DivyendraPatil/dstp/cmd/dstp@v0.9.0
+# or from a clone (embeds version/commit/date):
 make install
 ```
 
@@ -34,9 +36,10 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | Flag | What it does |
 |------|----------------|
 | `-a, --addr` / positional | Target host/URL/IP. **Positional overrides** YAML `addr`. Full URLs keep scheme/port/path/query for HTTP(S). |
-| `-o json` | JSON with `status` / `content` / `error` (`configured_dns` key) |
+| `-o json` | JSON with `status` / `content` / `error` (`configured_dns` key); optional additive `network` object |
 | `-t 5` | Per-check timeout seconds (must be positive; default `2 * ping count`) |
 | `-p 3` | Ping count (must be positive) |
+| `--port` / `--tcp-port` / `--udp-port` / `--http-port` | TLS/HTTPS, TCP, UDP, cleartext HTTP ports (defaults `443` / same as `--port` / `53` / `80`) |
 | `--dns 8.8.8.8` | Resolver for **ConfiguredDNS** / records |
 | `--doh` | DNS-over-HTTPS for **DNS** (default RFC 8484 `dns-message`) |
 | `--doh-url` | HTTPS DoH endpoint |
@@ -46,13 +49,13 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | `--follow-redirects` | Follow redirects |
 | `--profile` | Preset: **`web`** (default), `mail`, `dns`, `api`, `network`, `full` |
 | `--insecure` | Skip TLS verify only when set (security risk) |
-| `--extra` | traceroute, whois, MTU (requires local tools) |
+| `--extra` | traceroute, whois, MTU (requires local tools; auto-on for `network`) |
 | `--skip ping,http` | Extra skips merged with the profile; `--skip=` clears YAML skips |
 | `--config PATH` | YAML defaults (`os.UserConfigDir()/dstp/config.yaml`) |
 | `-q` | Quiet (no progress) |
 | `-v` / `-h` | Version / help (processed before config load) |
 
-Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `routing`, `rdap`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`.
+Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `routing`, `rdap`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`. Alias: `system_dns` → `configured_dns`.
 
 Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`. Skipped checks are omitted from plaintext (still present in JSON). HTTPS/HTTP3 **403** with Cloudflare/`cf-ray` is reported as a warning with an edge challenge/WAF note (transport still OK).
 
@@ -61,9 +64,9 @@ Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on 
 | Profile | Focus | Skips |
 |---------|--------|--------|
 | `web` (default) | Site/CDN: DNS, TCP, TLS, HTTP(S), HTTP/3, CDN | `udp`, `mail`, `dnssec`, `routing`, `rdap` |
-| `mail` | SPF / DMARC / DKIM (+ BIMI if present), records, DNSSEC | HTTP stack, ping, TCP/UDP/TLS, routing |
-| `dns` | Resolvers, records, DNSSEC, smarter UDP→NS | HTTP stack, mail, ping, TCP/TLS, routing |
-| `api` | TCP, TLS, HTTPS, HTTP/3, CDN, DNS | `udp`, `mail`, `dnssec`, cleartext `http`, `ping`, routing |
+| `mail` | SPF / DMARC / DKIM (+ BIMI if present), records, DNSSEC | HTTP stack, ping, TCP/UDP/TLS, routing, rdap |
+| `dns` | Resolvers, records, DNSSEC, smarter UDP→NS | HTTP stack, mail, ping, TCP/TLS, routing, rdap |
+| `api` | TCP, TLS, HTTPS, HTTP/3, CDN, DNS | `udp`, `mail`, `dnssec`, cleartext `http`, `ping`, routing, rdap |
 | `network` | ASN/prefix/RPKI, RDAP, ping/DNS, traceroute/MTU | HTTP/TLS stack, mail, dnssec, whois |
 | `full` | Everything | — |
 
@@ -71,14 +74,35 @@ Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on 
 
 Default UDP `:53` (in `dns`/`full`) retargets to an NS host when the address is a web/CDN name. TLS warns when the cert expires in ≤30 days and reports chain length, OCSP stapling, and CT/SCT hints.
 
+### Examples
+
 ```bash
-dstp example.com -o json
+# default web profile
+dstp example.com
+dstp example.com -o json -q
+
+# URL keeps scheme/port/path/query for HTTP(S)
 dstp https://example.com:8443/health?q=1
-dstp staging --config ./prod.yaml   # probes staging, not YAML addr
-dstp example.com --profile mail     # SPF/DMARC focus
-dstp cloudflare.com --profile network
+
+# profiles
+dstp example.com --profile mail          # SPF/DMARC/DKIM
+dstp example.com --profile dns           # resolvers + DNSSEC + UDP→NS
+dstp example.com --profile api -q        # TLS/HTTPS/HTTP3/CDN (no cleartext HTTP)
+dstp cloudflare.com --profile network -q # ASN/RPKI/RDAP + traceroute/MTU
 dstp example.com --profile full -q
+
+# routing detail in JSON (additive "network" object)
+dstp cloudflare.com --profile network -o json -q
+
+# DoH + custom resolver
+dstp example.com --doh --dns 1.1.1.1
+dstp example.com --doh --doh-format json --doh-bootstrap 1.1.1.1
+
+# ports, skips, extra path probes
+dstp example.com --port 8443 --tcp-port 8443
 dstp 1.1.1.1 --insecure --skip http,https
+dstp example.com --extra                 # traceroute/whois/mtu on top of profile
+dstp staging --config ./prod.yaml        # probes staging, not YAML addr
 ```
 
 ### Config file
@@ -93,6 +117,7 @@ ping_count: 3
 dns: 1.1.1.1
 doh: false
 doh_url: https://cloudflare-dns.com/dns-query
+doh_format: rfc8484
 method: GET
 follow_redirects: false
 insecure: false
@@ -110,7 +135,7 @@ Precedence: defaults → YAML → CLI flags → **positional target**. Unknown Y
 ## Completions & man page
 
 ```bash
-make completions          # regenerate from Registry / CheckIDs()
+make completions              # regenerate from Registry / CheckIDs()
 source completions/dstp.zsh   # zsh
 source completions/dstp.bash  # bash
 man ./man/dstp.1
@@ -121,6 +146,7 @@ man ./man/dstp.1
 ```bash
 make check          # fmt, vet, lint, test, race, release-check
 make release-check  # goreleaser check + snapshot
+make completions    # sync shell completions with check IDs
 ```
 
 ## License
