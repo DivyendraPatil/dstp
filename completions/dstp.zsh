@@ -1,7 +1,7 @@
 #compdef dstp
 
 local -a checks
-checks=(ping dns configured_dns records mail dnssec tcp udp tls http https http3 cdn traceroute whois mtu)
+checks=(ping dns configured_dns records mail dnssec routing rdap tcp udp tls http https http3 cdn traceroute whois mtu)
 
 _arguments -C \
   '(-a --addr)'{-a,--addr}'[target host]:host:' \
@@ -21,7 +21,7 @@ _arguments -C \
   '--follow-redirects[follow redirects]' \
   '--insecure[skip TLS verify]' \
   '--extra[enable traceroute/whois/mtu]' \
-  '--profile[check profile]:profile:(web mail dns api full)' \
+  '--profile[check profile]:profile:(web mail dns api network full)' \
   '--skip[skip checks (comma-separated)]:checks:_values -s , check $checks' \
   '--config[config file]:file:_files' \
   '(-q --quiet)'{-q,--quiet}'[quiet]' \

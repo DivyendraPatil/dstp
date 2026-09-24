@@ -4,25 +4,28 @@ import "strings"
 
 // Named check profiles (high-signal presets). Default is "web".
 const (
-	ProfileWeb  = "web"
-	ProfileMail = "mail"
-	ProfileDNS  = "dns"
-	ProfileAPI  = "api"
-	ProfileFull = "full"
+	ProfileWeb     = "web"
+	ProfileMail    = "mail"
+	ProfileDNS     = "dns"
+	ProfileAPI     = "api"
+	ProfileNetwork = "network"
+	ProfileFull    = "full"
 )
 
 // profileSkips lists checks omitted by each profile.
 // full has an empty skip set.
 var profileSkips = map[string][]string{
-	// Sites/CDN edges: skip DNS:53 noise and mail/dnssec depth.
-	ProfileWeb: {"udp", "mail", "dnssec"},
+	// Sites/CDN edges: skip DNS:53 noise, mail/dnssec depth, and routing enrichment.
+	ProfileWeb: {"udp", "mail", "dnssec", "routing", "rdap"},
 	// Inbox / domain auth focus.
-	ProfileMail: {"ping", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
+	ProfileMail: {"ping", "tcp", "udp", "tls", "http", "https", "http3", "cdn", "routing", "rdap"},
 	// Resolver / authority focus (keeps smarter UDP → NS).
-	ProfileDNS: {"ping", "tcp", "tls", "http", "https", "http3", "cdn", "mail"},
+	ProfileDNS: {"ping", "tcp", "tls", "http", "https", "http3", "cdn", "mail", "routing", "rdap"},
 	// Service endpoint focus.
-	ProfileAPI:  {"udp", "mail", "dnssec", "http", "ping"},
-	ProfileFull: {},
+	ProfileAPI: {"udp", "mail", "dnssec", "http", "ping", "routing", "rdap"},
+	// Path / ownership: ASN, RPKI, RDAP, traceroute (extra auto-enabled).
+	ProfileNetwork: {"tcp", "udp", "tls", "http", "https", "http3", "cdn", "mail", "dnssec", "whois"},
+	ProfileFull:    {},
 }
 
 // NormalizeProfile returns a canonical profile name or "" if unknown.
@@ -31,7 +34,7 @@ func NormalizeProfile(p string) string {
 	switch p {
 	case "", ProfileWeb:
 		return ProfileWeb
-	case ProfileMail, ProfileDNS, ProfileAPI, ProfileFull:
+	case ProfileMail, ProfileDNS, ProfileAPI, ProfileNetwork, ProfileFull:
 		return p
 	default:
 		return ""

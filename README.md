@@ -53,7 +53,7 @@ Binary releases (when published): download the archive for your OS from GitHub R
 | `-q` | Quiet (no progress) |
 | `-v` / `-h` | Version / help (processed before config load) |
 
-Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`.
+Check IDs: `ping`, `dns`, `configured_dns`, `records`, `mail`, `dnssec`, `routing`, `rdap`, `tcp`, `udp`, `tls`, `http`, `https`, `http3`, `cdn`, `traceroute`, `whois`, `mtu`.
 
 Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on `error`. Skipped checks are omitted from plaintext (still present in JSON).
 
@@ -61,11 +61,14 @@ Statuses: `ok`, `warning`, `inconclusive`, `error`, `skipped`. Exit `1` only on 
 
 | Profile | Focus | Skips |
 |---------|--------|--------|
-| `web` (default) | Site/CDN: DNS, TCP, TLS, HTTP(S), HTTP/3, CDN | `udp`, `mail`, `dnssec` |
-| `mail` | SPF / DMARC / DKIM (+ BIMI if present), records, DNSSEC | HTTP stack, ping, TCP/UDP/TLS |
-| `dns` | Resolvers, records, DNSSEC, smarter UDP→NS | HTTP stack, mail, ping, TCP/TLS |
-| `api` | TCP, TLS, HTTPS, HTTP/3, CDN, DNS | `udp`, `mail`, `dnssec`, cleartext `http`, `ping` |
+| `web` (default) | Site/CDN: DNS, TCP, TLS, HTTP(S), HTTP/3, CDN | `udp`, `mail`, `dnssec`, `routing`, `rdap` |
+| `mail` | SPF / DMARC / DKIM (+ BIMI if present), records, DNSSEC | HTTP stack, ping, TCP/UDP/TLS, routing |
+| `dns` | Resolvers, records, DNSSEC, smarter UDP→NS | HTTP stack, mail, ping, TCP/TLS, routing |
+| `api` | TCP, TLS, HTTPS, HTTP/3, CDN, DNS | `udp`, `mail`, `dnssec`, cleartext `http`, `ping`, routing |
+| `network` | ASN/prefix/RPKI, RDAP, ping/DNS, traceroute/MTU | HTTP/TLS stack, mail, dnssec, whois |
 | `full` | Everything | — |
+
+`network` auto-enables `--extra` (traceroute/MTU). Routing uses RIPEstat (no API key); hop ASN notes use Team Cymru DNS. JSON keeps per-check keys and may add a structured `network` object.
 
 Default UDP `:53` (in `dns`/`full`) retargets to an NS host when the address is a web/CDN name. TLS warns when the cert expires in ≤30 days and reports chain length, OCSP stapling, and CT/SCT hints.
 
@@ -74,6 +77,7 @@ dstp example.com -o json
 dstp https://example.com:8443/health?q=1
 dstp staging --config ./prod.yaml   # probes staging, not YAML addr
 dstp example.com --profile mail     # SPF/DMARC focus
+dstp cloudflare.com --profile network
 dstp example.com --profile full -q
 dstp 1.1.1.1 --insecure --skip http,https
 ```

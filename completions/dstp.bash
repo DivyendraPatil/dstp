@@ -1,5 +1,5 @@
 # bash completion for dstp
-_dstp_checks="ping dns configured_dns records mail dnssec tcp udp tls http https http3 cdn traceroute whois mtu"
+_dstp_checks="ping dns configured_dns records mail dnssec routing rdap tcp udp tls http https http3 cdn traceroute whois mtu"
 
 _dstp() {
   local cur prev
@@ -11,7 +11,7 @@ _dstp() {
     -o|--out) COMPREPLY=( $(compgen -W "plaintext json" -- "${cur}") ); return ;;
     --method) COMPREPLY=( $(compgen -W "GET HEAD" -- "${cur}") ); return ;;
     --doh-format) COMPREPLY=( $(compgen -W "rfc8484 json" -- "${cur}") ); return ;;
-    --profile) COMPREPLY=( $(compgen -W "web mail dns api full" -- "${cur}") ); return ;;
+    --profile) COMPREPLY=( $(compgen -W "web mail dns api network full" -- "${cur}") ); return ;;
     --skip)
       local prefix="" rest="${cur}"
       if [[ "${cur}" == *,* ]]; then

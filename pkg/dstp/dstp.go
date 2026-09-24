@@ -126,6 +126,16 @@ func (rn *Runner) Run(ctx context.Context, cfg config.Config) (*common.Result, e
 			_ = lookup.DNSSEC(jctx, common.Address(addr), cfg.CustomDnsServer, timeout, result)
 			progress.done(string(CheckDNSSEC), getByID(result, CheckDNSSEC))
 		}},
+		{lookupMetaMust(CheckRouting), func() {
+			progress.start(string(CheckRouting))
+			_ = testRouting(ctx, common.Address(addr), timeout, result)
+			progress.done(string(CheckRouting), getByID(result, CheckRouting))
+		}},
+		{lookupMetaMust(CheckRDAP), func() {
+			progress.start(string(CheckRDAP))
+			_ = testRDAPCheck(ctx, common.Address(addr), timeout, result)
+			progress.done(string(CheckRDAP), getByID(result, CheckRDAP))
+		}},
 		{lookupMetaMust(CheckTCP), func() {
 			progress.start(string(CheckTCP))
 			_ = testTCP(ctx, common.Address(addr), tcpPort, timeout, result)

@@ -26,7 +26,7 @@ func TestRunnerWithFakePing(t *testing.T) {
 		Quiet:     true,
 		Timeout:   2,
 		PingCount: 1,
-		Skip:      []string{"dns", "configured_dns", "records", "mail", "dnssec", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
+		Skip:      []string{"dns", "configured_dns", "records", "mail", "dnssec", "routing", "rdap", "tcp", "udp", "tls", "http", "https", "http3", "cdn"},
 	}
 	result, err := rn.Run(context.Background(), cfg)
 	if err != nil {
@@ -43,10 +43,22 @@ func TestRunnerWithFakePing(t *testing.T) {
 
 func TestCheckIDsComplete(t *testing.T) {
 	ids := CheckIDs()
-	if len(ids) < 9 {
-		t.Fatalf("%v", ids)
+	if len(ids) != len(Registry) {
+		t.Fatalf("CheckIDs=%d Registry=%d %v", len(ids), len(Registry), ids)
 	}
-	if !isExtraCheck("traceroute") || isExtraCheck("ping") {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate %s", id)
+		}
+		seen[id] = true
+	}
+	for _, want := range []string{"routing", "rdap", "ping", "traceroute"} {
+		if !seen[want] {
+			t.Fatalf("missing %s", want)
+		}
+	}
+	if !isExtraCheck("traceroute") || isExtraCheck("routing") || isExtraCheck("ping") {
 		t.Fatal("extra meta")
 	}
 }

@@ -79,6 +79,8 @@ type Result struct {
 	Records    ResultPart `json:"records"`
 	Mail       ResultPart `json:"mail"`
 	DNSSEC     ResultPart `json:"dnssec"`
+	Routing    ResultPart `json:"routing"`
+	RDAP       ResultPart `json:"rdap"`
 	TCP        ResultPart `json:"tcp"`
 	UDP        ResultPart `json:"udp"`
 	TLS        ResultPart `json:"tls"`
@@ -89,12 +91,21 @@ type Result struct {
 	Traceroute ResultPart `json:"traceroute"`
 	Whois      ResultPart `json:"whois"`
 	MTU        ResultPart `json:"mtu"`
-	Mu         sync.Mutex `json:"-"`
+	// Network is optional structured routing detail (additive JSON "network" object).
+	Network any `json:"-"`
+	Mu      sync.Mutex `json:"-"`
 }
 
 func (r *Result) Store(dst *ResultPart, part ResultPart) {
 	r.Mu.Lock()
 	*dst = part
+	r.Mu.Unlock()
+}
+
+// StoreNetwork sets the optional structured network object for JSON output.
+func (r *Result) StoreNetwork(v any) {
+	r.Mu.Lock()
+	r.Network = v
 	r.Mu.Unlock()
 }
 
@@ -121,6 +132,8 @@ func (r *Result) parts() []namedPart {
 		{"Records", "records", r.Records},
 		{"Mail", "mail", r.Mail},
 		{"DNSSEC", "dnssec", r.DNSSEC},
+		{"Routing", "routing", r.Routing},
+		{"RDAP", "rdap", r.RDAP},
 		{"TCP", "tcp", r.TCP},
 		{"UDP", "udp", r.UDP},
 		{"TLS", "tls", r.TLS},
@@ -171,7 +184,7 @@ func (r *Result) jsonOutput() string {
 		Content string `json:"content,omitempty"`
 		Error   string `json:"error,omitempty"`
 	}
-	out := map[string]item{}
+	out := map[string]any{}
 	for _, p := range r.parts() {
 		if p.part.Status == "" && p.part.Content == "" && p.part.Error == nil {
 			continue
@@ -190,6 +203,12 @@ func (r *Result) jsonOutput() string {
 			it.Content = p.part.Content
 		}
 		out[p.key] = it
+	}
+	r.Mu.Lock()
+	netObj := r.Network
+	r.Mu.Unlock()
+	if netObj != nil {
+		out["network"] = netObj
 	}
 	byt, _ := json.MarshalIndent(out, "", "  ")
 	return string(byt)

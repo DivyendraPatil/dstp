@@ -73,7 +73,7 @@ Options:
 	--follow-redirects     Follow HTTP(S) redirects
 	--insecure             Skip TLS certificate verification (security risk)
 	--extra                Also run traceroute, whois, and MTU probes
-	--profile      <name>  Preset: web (default), mail, dns, api, full
+	--profile      <name>  Preset: web (default), mail, dns, api, network, full
 	--skip         <list>  Extra checks to skip (merged with profile)
 	--config       <path>    Config file                                       [Default: $XDG config/dstp/config.yaml]
 	-q, --quiet            Suppress progress on stderr
@@ -81,11 +81,12 @@ Options:
 	-h, --help             Show help and exit.
 
 Profiles:
-	web   site/CDN checks; skips udp, mail, dnssec (fixes :53 noise)
-	mail  SPF/DMARC/DKIM/BIMI + records/dnssec
-	dns   resolvers, records, DNSSEC, smarter UDP→NS
-	api   TCP/TLS/HTTPS/HTTP3/CDN (no cleartext HTTP)
-	full  every check
+	web     site/CDN checks; skips udp, mail, dnssec, routing (fixes :53 noise)
+	mail    SPF/DMARC/DKIM/BIMI + records/dnssec
+	dns     resolvers, records, DNSSEC, smarter UDP→NS
+	api     TCP/TLS/HTTPS/HTTP3/CDN (no cleartext HTTP)
+	network ASN/RPKI/RDAP + path (enables traceroute/mtu)
+	full    every check
 `
 
 func PrintUsage(w io.Writer) {
@@ -184,7 +185,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 	fs.BoolVar(&opts.FollowRedirects, "follow-redirects", opts.FollowRedirects, "Follow redirects")
 	fs.BoolVar(&opts.Insecure, "insecure", opts.Insecure, "Skip TLS verification")
 	fs.BoolVar(&opts.Extra, "extra", opts.Extra, "Enable traceroute/whois/mtu")
-	fs.StringVar(&opts.Profile, "profile", opts.Profile, "Check profile: web, mail, dns, api, full")
+	fs.StringVar(&opts.Profile, "profile", opts.Profile, "Check profile: web, mail, dns, api, network, full")
 	fs.StringVar(&skip, "skip", "", "Comma-separated checks to skip")
 	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "Path to config YAML")
 	fs.BoolVarP(&opts.Quiet, "quiet", "q", opts.Quiet, "Suppress progress")
@@ -224,10 +225,14 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 
 	prof := NormalizeProfile(opts.Profile)
 	if prof == "" {
-		return nil, fmt.Errorf("%w: unknown --profile %q (use web, mail, dns, api, full)", ErrUsage, opts.Profile)
+		return nil, fmt.Errorf("%w: unknown --profile %q (use web, mail, dns, api, network, full)", ErrUsage, opts.Profile)
 	}
 	opts.Profile = prof
 	opts.Skip = mergeSkipUnique(ProfileSkipList(opts.Profile), opts.Skip)
+	// network profile needs path probes; enable extra checks unless already on.
+	if opts.Profile == ProfileNetwork {
+		opts.Extra = true
+	}
 
 	if opts.PingCount <= 0 {
 		return nil, fmt.Errorf("%w: ping count (-p) must be positive", ErrUsage)
@@ -250,7 +255,7 @@ func ConfigureOptions(fs *flag.FlagSet, args []string) (*Config, error) {
 
 	known := map[string]struct{}{
 		"ping": {}, "dns": {}, "configured_dns": {}, "system_dns": {}, "records": {},
-		"mail": {}, "dnssec": {},
+		"mail": {}, "dnssec": {}, "routing": {}, "rdap": {},
 		"tcp": {}, "udp": {}, "tls": {}, "http": {}, "https": {}, "http3": {}, "cdn": {},
 		"traceroute": {}, "whois": {}, "mtu": {},
 	}

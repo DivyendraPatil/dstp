@@ -16,6 +16,8 @@ const (
 	CheckRecords       CheckID = "records"
 	CheckMail          CheckID = "mail"
 	CheckDNSSEC        CheckID = "dnssec"
+	CheckRouting       CheckID = "routing"
+	CheckRDAP          CheckID = "rdap"
 	CheckTCP           CheckID = "tcp"
 	CheckUDP           CheckID = "udp"
 	CheckTLS           CheckID = "tls"
@@ -45,6 +47,8 @@ var Registry = []CheckMeta{
 	{ID: CheckRecords, Label: "Records", JSONKey: "records"},
 	{ID: CheckMail, Label: "Mail", JSONKey: "mail"},
 	{ID: CheckDNSSEC, Label: "DNSSEC", JSONKey: "dnssec"},
+	{ID: CheckRouting, Label: "Routing", JSONKey: "routing"},
+	{ID: CheckRDAP, Label: "RDAP", JSONKey: "rdap"},
 	{ID: CheckTCP, Label: "TCP", JSONKey: "tcp"},
 	{ID: CheckUDP, Label: "UDP", JSONKey: "udp"},
 	{ID: CheckTLS, Label: "TLS", JSONKey: "tls"},
@@ -95,6 +99,10 @@ func setByID(r *common.Result, id CheckID, part common.ResultPart) {
 		r.Store(&r.Mail, part)
 	case CheckDNSSEC:
 		r.Store(&r.DNSSEC, part)
+	case CheckRouting:
+		r.Store(&r.Routing, part)
+	case CheckRDAP:
+		r.Store(&r.RDAP, part)
 	case CheckTCP:
 		r.Store(&r.TCP, part)
 	case CheckUDP:
@@ -134,6 +142,10 @@ func getByID(r *common.Result, id CheckID) common.ResultPart {
 		return r.Mail
 	case CheckDNSSEC:
 		return r.DNSSEC
+	case CheckRouting:
+		return r.Routing
+	case CheckRDAP:
+		return r.RDAP
 	case CheckTCP:
 		return r.TCP
 	case CheckUDP:

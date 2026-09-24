@@ -18,6 +18,9 @@ func TestDefaultProfileIsWeb(t *testing.T) {
 	if !opts.ShouldSkip("udp") || !opts.ShouldSkip("mail") || !opts.ShouldSkip("dnssec") {
 		t.Fatalf("web skips=%v", opts.Skip)
 	}
+	if !opts.ShouldSkip("routing") || !opts.ShouldSkip("rdap") {
+		t.Fatalf("web should skip routing/rdap: %v", opts.Skip)
+	}
 	if opts.ShouldSkip("https") || opts.ShouldSkip("tls") {
 		t.Fatalf("web should run tls/https: %v", opts.Skip)
 	}
@@ -59,12 +62,35 @@ func TestUnknownProfile(t *testing.T) {
 	}
 }
 
+func TestProfileNetwork(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	opts, err := ConfigureOptions(fs, []string{"example.com", "--profile", "network"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Profile != ProfileNetwork {
+		t.Fatalf("profile=%q", opts.Profile)
+	}
+	if !opts.Extra {
+		t.Fatal("network profile should enable --extra")
+	}
+	if opts.ShouldSkip("routing") || opts.ShouldSkip("rdap") || opts.ShouldSkip("dns") {
+		t.Fatalf("network should run routing/rdap/dns: %v", opts.Skip)
+	}
+	if !opts.ShouldSkip("https") || !opts.ShouldSkip("http3") || !opts.ShouldSkip("whois") {
+		t.Fatalf("network should skip https/http3/whois: %v", opts.Skip)
+	}
+}
+
 func TestNormalizeProfile(t *testing.T) {
 	if NormalizeProfile("") != ProfileWeb {
 		t.Fatal("empty -> web")
 	}
 	if NormalizeProfile("FULL") != ProfileFull {
 		t.Fatal("FULL")
+	}
+	if NormalizeProfile("NETWORK") != ProfileNetwork {
+		t.Fatal("NETWORK")
 	}
 	if NormalizeProfile("x") != "" {
 		t.Fatal("unknown")

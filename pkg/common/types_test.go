@@ -75,3 +75,23 @@ func TestSkippedOmittedFromPlaintext(t *testing.T) {
 		t.Fatalf("json should keep skipped: %s", js)
 	}
 }
+
+func TestJSONNetworkBlockAdditive(t *testing.T) {
+	r := &Result{Routing: OK("AS13335")}
+	r.StoreNetwork(map[string]any{"asn": map[string]any{"asn": 13335}, "rpki": map[string]any{"status": "valid"}})
+	out := r.Output("json")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["routing"]; !ok {
+		t.Fatalf("missing routing key: %s", out)
+	}
+	netObj, ok := got["network"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing network object: %s", out)
+	}
+	if netObj["asn"] == nil {
+		t.Fatalf("%v", netObj)
+	}
+}
