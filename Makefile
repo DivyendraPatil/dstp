@@ -46,6 +46,6 @@ vet:
 	go vet ./...
 
 completions:
-	go run ./cmd/gencompletions .
+	go run ./cmd/gencompletions
 
 check: fmt vet lint test race release-check
