@@ -92,10 +92,10 @@ complete -F _dstp dstp
 `
 	bash := strings.ReplaceAll(bashTmpl, "__CHECKS__", checks)
 
-	if err := os.WriteFile(zshPath, []byte(zsh), 0o644); err != nil {
+	if err := os.WriteFile(zshPath, []byte(zsh), 0o600); err != nil {
 		fatal(err)
 	}
-	if err := os.WriteFile(bashPath, []byte(bash), 0o644); err != nil {
+	if err := os.WriteFile(bashPath, []byte(bash), 0o600); err != nil {
 		fatal(err)
 	}
 	fmt.Printf("wrote %s\nwrote %s\n", zshPath, bashPath)
